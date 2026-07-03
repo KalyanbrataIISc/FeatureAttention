@@ -3,7 +3,7 @@ if ~ismac
     if exist('cedrus','var')
         cedrus.close();
     end
-    
+
     s=instrfind; %#ok<INSTRF>
     if ~isempty(s)
         fclose(s);
@@ -43,7 +43,7 @@ if ~ismac
 else
     eyeTracking = 0;
 end
-    
+
 %% Info for CSV logging
 % Unique session tag
 sessionTag = sprintf('p%s_b%s', participantInfo, blockInfo);
@@ -53,10 +53,9 @@ csvBaseDir = fullfile(experimentRoot, 'data');
 if ~exist(csvBaseDir, 'dir')
     mkdir(csvBaseDir);
 end
-csvFile = fullfile(csvBaseDir, sprintf('%s_newtask_trialdata.csv', sessionTag));
-csvHeader = ['TrialNumber,Condition,TrialStart,FixationOnset,TextOnset,StimOnset,NFOnset,' ...
-    'ResponseOnset,FeedbackOnset,TrialEnd,NFMean,NFSuccess,CorrectResponse,' ...
-    'ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout'];
+csvFile = fullfile(csvBaseDir, sprintf('%s_leaves_trialdata.csv', sessionTag));
+csvHeader = ['TrialNumber,TrialStart,C1PointDir,C1MoveDir,C2PointDir,C2MoveDir,Cue,CueOnsetTime,' ...
+    'CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout,TrialEnd'];
 if ~exist(csvFile, 'file')
     fid = fopen(csvFile, 'w');
     fprintf(fid, '%s\n', csvHeader);
@@ -66,19 +65,18 @@ else
     existingCsvHeader = fgetl(fid);
     fclose(fid);
     if ~ischar(existingCsvHeader) || ~strcmp(strtrim(existingCsvHeader), csvHeader)
-        csvFile = fullfile(csvBaseDir, sprintf('%s_newtask_trialdata_%s.csv', sessionTag, datestr(now, 'yyyymmdd_HHMMSS')));
+        csvFile = fullfile(csvBaseDir, sprintf('%s_leaves_trialdata_%s.csv', sessionTag, datestr(now, 'yyyymmdd_HHMMSS')));
         fid = fopen(csvFile, 'w');
         fprintf(fid, '%s\n', csvHeader);
         fclose(fid);
         fprintf('Existing CSV header did not match. Writing this run to %s\n', csvFile);
     end
 end
-% postions on the screen
-% 255 pix = 6.7 deg eccentricity
-% 225 pix = 5.9245 deg eccenricity, subDispix = 2.168215718584939e+03
 
 % Cedrus:   Up button       = 1
-%           Middle button   = 4
+%           Right button    = 5
+%           Middle button   = 4 (unused)
+%           Left button     = 3
 %           Down button     = 6
 
 % Here we call some default settings for setting up Psychtoolbox
@@ -86,13 +84,11 @@ PsychDefaultSetup(2);
 if ismac
     Screen('Preference', 'SkipSyncTests', 1);
 end
-% Screen('Preference', 'SuppressAllWarnings', 1);
-% Screen('Preference', 'Verbosity', 0);  % Set to 0 for complete silence on shader compilation
 
 % Unify key names across different operating systems
 KbName('UnifyKeyNames');
 
-% Paraport setup for neurofeedback
+% Paraport setup for triggers
 if ~ismac
     paraport = serial('COM9','BaudRate',115200,'DataBits',8, 'StopBits', 1, 'Parity', 'none'); %#ok<SERIAL>
     get(paraport);
@@ -103,61 +99,70 @@ if ~exist('paraport','var')
     paraport = [];
 end
 
+%% Display colors
+grey  = [128 128 128];
+black = [0 0 0];
+white = [255 255 255];
+green = [0 255 0];
+red   = [255 0 0];
+
 %% PARAMETERS
-% Key mappings
-escapeKey   = KbName('ESCAPE');
-spaceKey    = KbName('space');
-leftKey     = KbName('LeftArrow');
-rightKey    = KbName('RightArrow');
-upKey       = KbName('UpArrow');
-downKey     = KbName('DownArrow');
+% Key mappings (used only when running on mac, where no Cedrus box is present)
+escapeKey = KbName('ESCAPE');
+leftKey   = KbName('LeftArrow');
+rightKey  = KbName('RightArrow');
+upKey     = KbName('UpArrow');
+downKey   = KbName('DownArrow');
 
 % Experiment structure
-trialNumberPerBlock = 12;
-conditions = repmat({'A','B'}, 1, trialNumberPerBlock/2);
-conditions = conditions(randperm(numel(conditions)));
+trialNumberPerBlock = 20; % keep even so the c1/c2 cue can be balanced 50/50
+directionSet = {'up', 'down', 'left', 'right'};
+cueList = repmat({'c1', 'c2'}, 1, trialNumberPerBlock / 2);
+cueList = cueList(randperm(numel(cueList)));
 
-% Timing in seconds, converted after measured refresh rate is known
-fixationDurationSec = 0.500;
-textDurationSec = 0.500;
-stimDurationSec = 0.800;
-nfDurationSec = 2.000;
-responseTimeoutSec = 1.500;
-feedbackDurationSec = 0.500;
-itiDurationSec = 0.500;
+% Timing in seconds, converted to frames after the measured refresh rate is known
+preCueConstantSec   = 1.000;  % fixed foreperiod before the hazard-uniform jitter
+preCueExpMeanSec    = 3.000;  % mean of the exponential jitter added to the foreperiod
+preCueExpMaxSec     = 10.000;  % truncation cap on the exponential jitter (keeps trials bounded)
+responseTimeoutSec  = 4.000;  % response window, timed from cue onset
+feedbackDurationSec = 1.000;  % 'Correct'/'Incorrect' feedback display time
+itiDurationSec      = 1.000;  % blank inter-trial interval
 
-% Visual parameters
-dotBaseDiameter = 10;
-dotBaseColor = [255 0 0];
-stimulusRadius = 80;
-nfBarWidth = 30;
-nfBarHeight = 300;
-nfThreshold = 0.50;
+% Leaf geometry (pixels - convert to/from degrees of visual angle yourself
+% for your rig, e.g. using px/deg = screen_px_per_unit_distance * tan(1 deg))
+fieldMarginPx         = 60;  % inset from the screen edge so leaves aren't clipped
+leafLengthPx          = 45;
+leafWidthPx           = 19;
+leafBorderThicknessPx = 6;   % extra thickness added per side for the SSVEP border
+minLeafSeparationPx   = 68;  % minimum center-to-center distance enforced between any two leaves
+leafSpeedPxPerSec     = 150;
+leafLifetimeSec       = 1.0; % how long a single leaf stays on screen before it respawns elsewhere
+numLeavesPerFlock     = 30;  % density = numLeavesPerFlock / (screen area in px^2)
 
-% Trigger values for task-specific events. Named core triggers are still
-% sent with cog_send_triggers.
-trigFixationOnset = 11;
-trigTextOnset = 12;
-trigStimOnset = 13;
-trigNFOnset = 14;
-trigResponseWindow = 15;
-trigFeedbackOnset = 16;
-trigTimeout = 17;
+% Fixation dot / cue patch (same object: neutral pre-cue, cue-colored after cue onset)
+fixationDotDiameterPx = 15;
 
-% Neurofeedback input. Expected format: doubles in nf.txt. If the file is
-% empty/missing, the scaffold uses 0 so the task can still run.
-pathToNF = fullfile(experimentRoot, 'nf.txt');
+% Colors
+colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
+colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
+colorPreCue    = (colorC1 + colorC2) / 2;  % leaf color before cue onset - the
+% midpoint of colorC1/colorC2 so it never coincides with either flock's
+% post-cue color, and (for two reasonably distinct, saturated colors)
+% naturally falls away from pure black/white too, so the full black<->white
+% SSVEP border swing stays visible throughout the whole trial.
+colorBorderLow  = black;  % SSVEP flicker low-luminance border color
+colorBorderHigh = white;  % SSVEP flicker high-luminance border color
+
+% SSVEP tagging frequencies (Hz)
+freqC1Hz = 14;
+freqC2Hz = 18;
+
+% Feedback text position (pixels above screen center)
+feedbackYOffsetPx = 200;
 
 %% Initialise the screen
 screens = Screen('Screens');
 screenNumber = max(screens);
-
-grey = [128 128 128];
-black = [0 0 0];
-white = [255 255 255];
-green = [0 255 0];
-red = [255 0 0];
-blue = [0 80 255];
 
 if ~ismac && eyeTracking
     EyeTracking(str2double(participantInfo),str2double(blockInfo),'start');
@@ -169,11 +174,12 @@ Screen('TextSize', window, 40);
 Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 [xCenter, yCenter] = RectCenter(windowRect);
-dotRadius = dotBaseDiameter / 2;
+dotRadius = fixationDotDiameterPx / 2;
 dotRect = [xCenter - dotRadius, yCenter - dotRadius, xCenter + dotRadius, yCenter + dotRadius];
+feedbackY = yCenter - feedbackYOffsetPx;
 
 Screen('FillRect', window, grey);
-Screen('FillOval', window, dotBaseColor, dotRect);
+Screen('FillOval', window, black, dotRect);
 Screen('Flip', window);
 WaitSecs(1);
 
@@ -187,13 +193,16 @@ topPriorityLevel = MaxPriority(window);
 Priority(topPriorityLevel);
 
 % Frame-based timing
-fixationFrames = max(1, round(fixationDurationSec / interFrameInterval));
-textFrames = max(1, round(textDurationSec / interFrameInterval));
-stimFrames = max(1, round(stimDurationSec / interFrameInterval));
-nfFrames = max(1, round(nfDurationSec / interFrameInterval));
 responseTimeoutFrames = max(1, round(responseTimeoutSec / interFrameInterval));
 feedbackFrames = max(1, round(feedbackDurationSec / interFrameInterval));
 itiFrames = max(1, round(itiDurationSec / interFrameInterval));
+leafLifetimeFrames = max(1, round(leafLifetimeSec / interFrameInterval));
+
+% Per-frame speed, and the leaf field rect (needs interFrameInterval/windowRect, known only now)
+leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
+
+fieldRect = [windowRect(1) + fieldMarginPx, windowRect(2) + fieldMarginPx, ...
+             windowRect(3) - fieldMarginPx, windowRect(4) - fieldMarginPx];
 
 %% Block Loop
 runBlockLoop = true;
@@ -219,52 +228,69 @@ try
         end
 
         %% Trial setup
-        condition = conditions{trialNumber};
-        if strcmp(condition, 'A')
-            correctResponse = 'left';
-            stimColor = blue;
+        c1PointDir = directionSet{randi(4)};
+        c1MoveDir  = directionSet{randi(4)};
+        c2PointDir = directionSet{randi(4)};
+        c2MoveDir  = directionSet{randi(4)};
+        cue = cueList{trialNumber};
+
+        if strcmp(cue, 'c1')
+            correctResponse = c1PointDir;
         else
-            correctResponse = 'right';
-            stimColor = white;
+            correctResponse = c2MoveDir;
         end
+
+        if strcmp(cue, 'c1')
+            cueColor = colorC1;
+        else
+            cueColor = colorC2;
+        end
+
+        flock1Velocity = directionToVector(c1MoveDir) * leafSpeedPxPerFrame;
+        flock2Velocity = directionToVector(c2MoveDir) * leafSpeedPxPerFrame;
+
+        flock1InnerShape = createLeafShape(c1PointDir, leafLengthPx, leafWidthPx);
+        flock1OuterShape = createLeafShape(c1PointDir, leafLengthPx + 2 * leafBorderThicknessPx, leafWidthPx + 2 * leafBorderThicknessPx);
+        flock2InnerShape = createLeafShape(c2PointDir, leafLengthPx, leafWidthPx);
+        flock2OuterShape = createLeafShape(c2PointDir, leafLengthPx + 2 * leafBorderThicknessPx, leafWidthPx + 2 * leafBorderThicknessPx);
+
+        leaves = initLeaves(numLeavesPerFlock, fieldRect, minLeafSeparationPx, leafLifetimeFrames, flock1Velocity, flock2Velocity);
 
         participantResponse = 'missed';
         reactionTime = NaN;
         accuracy = 0;
-        responseTimeout = 1;
-        nfValues = nan(1, nfFrames);
-        nfSuccess = 0;
+        responseTimeout = 0;
+        validResponse = false;
 
         trialStartTime = getElapsedTime(experimentStartTime);
-        fixationOnsetTime = NaN;
-        textOnsetTime = NaN;
-        stimOnsetTime = NaN;
-        nfOnsetTime = NaN;
-        responseOnsetTime = NaN;
-        feedbackOnsetTime = NaN;
+        cueOnsetTime = NaN;
         trialStopSent = false;
+        ssvepFrame = 0;
 
         disp(trialNumber);
         if ~ismac
             cog_send_triggers(paraport, 'trialstart');
         end
 
-        %% Fixation
-        for currentFrame = 1:fixationFrames
+        %% Pre-cue period (leaves neutral color, SSVEP already running, cue not yet revealed)
+        cueDelaySec = preCueConstantSec + truncatedExpRnd(preCueExpMeanSec, preCueExpMaxSec);
+        preCueFrames = max(1, round(cueDelaySec / interFrameInterval));
+
+        for currentFrame = 1:preCueFrames
+            ssvepFrame = ssvepFrame + 1;
+            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
+            [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
+                ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
+
             Screen('FillRect', window, grey);
-            Screen('FillOval', window, dotBaseColor, dotRect);
+            drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
+                colorPreCue, colorPreCue, flock1BorderColor, flock2BorderColor);
+            Screen('FillOval', window, black, dotRect);
 
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    fixationOnsetTime = getElapsedTime(experimentStartTime);
-                    sendNumericTrigger(paraport, trigFixationOnset);
-                end
             else
                 Screen('Flip', window);
-                if currentFrame == 1
-                    fixationOnsetTime = getElapsedTime(experimentStartTime);
-                end
             end
 
             if checkEscape(escapeKey)
@@ -280,147 +306,34 @@ try
             break;
         end
 
-        %% Text
-        for currentFrame = 1:textFrames
-            Screen('FillRect', window, grey);
-            Screen('TextSize', window, 48);
-            DrawFormattedText(window, 'TEST', 'center', 'center', black);
-            Screen('FillOval', window, dotBaseColor, dotRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    textOnsetTime = getElapsedTime(experimentStartTime);
-                    sendNumericTrigger(paraport, trigTextOnset);
-                end
-            else
-                Screen('Flip', window);
-                if currentFrame == 1
-                    textOnsetTime = getElapsedTime(experimentStartTime);
-                end
-            end
-
-            if checkEscape(escapeKey)
-                runBlockLoop = false;
-                break;
-            end
-        end
-        if ~runBlockLoop
-            if ~ismac && ~trialStopSent
-                cog_send_triggers(paraport, 'trialstop');
-                trialStopSent = true;
-            end
-            break;
-        end
-
-        %% Stimulus
-        stimulusRect = CenterRectOnPoint([0 0 stimulusRadius*2 stimulusRadius*2], xCenter, yCenter);
-        for currentFrame = 1:stimFrames
-            Screen('FillRect', window, grey);
-            Screen('FillOval', window, stimColor, stimulusRect);
-            Screen('FillOval', window, dotBaseColor, dotRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    stimOnsetTime = getElapsedTime(experimentStartTime);
-                    sendNumericTrigger(paraport, trigStimOnset);
-                end
-            else
-                Screen('Flip', window);
-                if currentFrame == 1
-                    stimOnsetTime = getElapsedTime(experimentStartTime);
-                end
-            end
-
-            if checkEscape(escapeKey)
-                runBlockLoop = false;
-                break;
-            end
-        end
-        if ~runBlockLoop
-            if ~ismac && ~trialStopSent
-                cog_send_triggers(paraport, 'trialstop');
-                trialStopSent = true;
-            end
-            break;
-        end
-
-        %% Neurofeedback
-        for currentFrame = 1:nfFrames
-            NF = readNFValue(pathToNF);
-            nfValues(currentFrame) = NF;
-            nfDisplay = min(max(NF, 0), 1);
-            nfSuccess = nanMean(nfValues(1:currentFrame)) >= nfThreshold;
-
-            nfBaseRect = CenterRectOnPoint([0 0 nfBarWidth nfBarHeight], xCenter, yCenter);
-            nfFillHeight = nfBarHeight * nfDisplay;
-            nfFillRect = [nfBaseRect(1), nfBaseRect(4) - nfFillHeight, nfBaseRect(3), nfBaseRect(4)];
-            nfThresholdY = nfBaseRect(4) - nfBarHeight * nfThreshold;
-
-            Screen('FillRect', window, grey);
-            Screen('FrameRect', window, black, nfBaseRect, 3);
-            Screen('FillRect', window, green, nfFillRect);
-            Screen('DrawLine', window, red, nfBaseRect(1) - 20, nfThresholdY, nfBaseRect(3) + 20, nfThresholdY, 3);
-            Screen('FillOval', window, dotBaseColor, dotRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    nfOnsetTime = getElapsedTime(experimentStartTime);
-                    sendNumericTrigger(paraport, trigNFOnset);
-                end
-            else
-                Screen('Flip', window);
-                if currentFrame == 1
-                    nfOnsetTime = getElapsedTime(experimentStartTime);
-                end
-            end
-
-            if checkEscape(escapeKey)
-                runBlockLoop = false;
-                break;
-            end
-        end
-        if ~runBlockLoop
-            if ~ismac && ~trialStopSent
-                cog_send_triggers(paraport, 'trialstop');
-                trialStopSent = true;
-            end
-            break;
-        end
-
-        %% Response
+        %% Cue onset + response window (leaves take on their flock colors; fixation dot shows the cue)
         if ~ismac
             cedrus.resettimer();
         end
 
         for currentFrame = 1:responseTimeoutFrames
+            ssvepFrame = ssvepFrame + 1;
+            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
+            [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
+                ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
+
             Screen('FillRect', window, grey);
-            Screen('TextSize', window, 32);
-            DrawFormattedText(window, 'Respond', 'center', yCenter - 80, black);
-            Screen('FillOval', window, dotBaseColor, dotRect);
+            drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
+                colorC1, colorC2, flock1BorderColor, flock2BorderColor);
+            Screen('FillOval', window, cueColor, dotRect);
 
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
                 if currentFrame == 1
-                    responseOnsetTime = getElapsedTime(experimentStartTime);
+                    cueOnsetTime = getElapsedTime(experimentStartTime);
+                    cog_send_triggers(paraport, 'cueonset');
                     cedrus.resettimer();
-                    sendNumericTrigger(paraport, trigResponseWindow);
                 end
             else
                 Screen('Flip', window);
                 if currentFrame == 1
-                    responseOnsetTime = getElapsedTime(experimentStartTime);
+                    cueOnsetTime = getElapsedTime(experimentStartTime);
                 end
-            end
-
-            if ~ismac
-                [validResponse, participantResponse, reactionTime] = getParticipantResponse( ...
-                    false, cedrus, leftKey, rightKey, upKey, downKey, spaceKey, responseOnsetTime);
-            else
-                [validResponse, participantResponse, reactionTime] = getParticipantResponse( ...
-                    true, [], leftKey, rightKey, upKey, downKey, spaceKey, responseOnsetTime);
             end
 
             if checkEscape(escapeKey)
@@ -428,8 +341,15 @@ try
                 break;
             end
 
+            if ~ismac
+                [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
+                    false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
+            else
+                [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
+                    true, [], leftKey, rightKey, upKey, downKey, cueOnsetTime);
+            end
+
             if validResponse
-                responseTimeout = 0;
                 accuracy = strcmp(participantResponse, correctResponse);
                 if ~ismac
                     cog_send_triggers(paraport, 'response');
@@ -445,69 +365,73 @@ try
             break;
         end
 
-        if responseTimeout && ~ismac
-            sendNumericTrigger(paraport, trigTimeout);
+        if ~validResponse
+            responseTimeout = 1;
         end
 
-        %% Feedback
-        if accuracy
-            feedbackString = 'CORRECT';
-            feedbackColor = green;
-        elseif responseTimeout
-            feedbackString = 'TOO SLOW';
-            feedbackColor = red;
-        else
-            feedbackString = 'INCORRECT';
-            feedbackColor = red;
-        end
-
-        for currentFrame = 1:feedbackFrames
-            Screen('FillRect', window, grey);
-            Screen('TextSize', window, 48);
-            DrawFormattedText(window, feedbackString, 'center', 'center', feedbackColor);
-            Screen('FillOval', window, dotBaseColor, dotRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    feedbackOnsetTime = getElapsedTime(experimentStartTime);
-                    sendNumericTrigger(paraport, trigFeedbackOnset);
-                end
+        %% Feedback (skipped entirely on timeout, per design)
+        if ~responseTimeout
+            if accuracy
+                feedbackString = 'Correct';
+                feedbackColor = green;
             else
-                Screen('Flip', window);
-                if currentFrame == 1
-                    feedbackOnsetTime = getElapsedTime(experimentStartTime);
+                feedbackString = 'Incorrect';
+                feedbackColor = red;
+            end
+
+            for currentFrame = 1:feedbackFrames
+                ssvepFrame = ssvepFrame + 1;
+                leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
+                [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
+                    ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
+
+                Screen('FillRect', window, grey);
+                drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
+                    colorC1, colorC2, flock1BorderColor, flock2BorderColor);
+                Screen('FillOval', window, cueColor, dotRect);
+                Screen('TextSize', window, 48);
+                DrawFormattedText(window, feedbackString, 'center', feedbackY, feedbackColor);
+
+                if ~ismac
+                    vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
+                else
+                    Screen('Flip', window);
                 end
+
+                if checkEscape(escapeKey)
+                    runBlockLoop = false;
+                    break;
+                end
+            end
+            if ~runBlockLoop
+                if ~ismac && ~trialStopSent
+                    cog_send_triggers(paraport, 'trialstop');
+                    trialStopSent = true;
+                end
+                break;
             end
         end
 
         if ~ismac
-            if nfSuccess && accuracy
-                cog_send_triggers(paraport, 'success');
-            else
-                cog_send_triggers(paraport, 'failure');
-            end
             cog_send_triggers(paraport, 'trialstop');
             trialStopSent = true;
         end
 
         %% Log trial
         trialEndTime = getElapsedTime(experimentStartTime);
-        nfMean = nanMean(nfValues);
         accuracyByTrial(trialNumber) = accuracy;
         rtByTrial(trialNumber) = reactionTime;
 
         fid = fopen(csvFile, 'a');
-        fprintf(fid, '%d,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%s,%s,%d,%.6f,%d\n', ...
-            trialNumber, condition, trialStartTime, fixationOnsetTime, textOnsetTime, stimOnsetTime, nfOnsetTime, ...
-            responseOnsetTime, feedbackOnsetTime, trialEndTime, nfMean, nfSuccess, correctResponse, ...
-            participantResponse, accuracy, reactionTime, responseTimeout);
+        fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%.6f,%s,%s,%d,%.6f,%d,%.6f\n', ...
+            trialNumber, trialStartTime, c1PointDir, c1MoveDir, c2PointDir, c2MoveDir, cue, cueOnsetTime, ...
+            correctResponse, participantResponse, accuracy, reactionTime, responseTimeout, trialEndTime);
         fclose(fid);
 
         %% ITI
         for currentFrame = 1:itiFrames
             Screen('FillRect', window, grey);
-            Screen('FillOval', window, dotBaseColor, dotRect);
+            Screen('FillOval', window, black, dotRect);
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
@@ -550,7 +474,7 @@ performanceText = sprintf(['TESTING COMPLETED!\n\n' ...
     'Press ESCAPE or any button to continue'], 100 * meanAccuracy);
 DrawFormattedText(window, performanceText, 'center', 'center', black);
 if ~ismac
-    vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval); %#ok<NASGU>
+    vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
 else
     Screen('Flip', window);
 end
@@ -574,4 +498,3 @@ while waitForEscape
 end
 
 cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
-
