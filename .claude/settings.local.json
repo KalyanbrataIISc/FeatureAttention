@@ -5,7 +5,8 @@
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"info = checkcode\\('/Users/kalyanbrata/Documents/MATLAB/FeatureAttention/gamev1.m','-id'\\); if isempty\\(info\\), disp\\('no issues'\\); else, for j=1:numel\\(info\\), fprintf\\('L%d [%s] %s\\\\n', info\\(j\\).line, info\\(j\\).id, info\\(j\\).message\\); end; end\")",
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/diagnose_thrash.m'\\)\")",
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/find_max_density.m'\\)\")",
-      "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/find_density_2x.m'\\)\")"
+      "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/find_density_2x.m'\\)\")",
+      "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/verify_merged_loop.m'\\)\")"
     ]
   }
 }

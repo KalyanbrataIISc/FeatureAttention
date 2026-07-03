@@ -129,15 +129,24 @@ feedbackDurationSec = 1.000;  % 'Correct'/'Incorrect' feedback display time
 itiDurationSec      = 1.000;  % blank inter-trial interval
 
 % Leaf geometry (pixels - convert to/from degrees of visual angle yourself
-% for your rig, e.g. using px/deg = screen_px_per_unit_distance * tan(1 deg))
-fieldMarginPx         = 0;    % inset from the screen edge - 0 uses the full screen, leaves may clip at the edge
-leafLengthPx          = 90;
-leafWidthPx           = 38;
-leafBorderThicknessPx = 18;   % extra thickness added per side for the SSVEP border
-minLeafSeparationPx   = 100;  % minimum center-to-center distance enforced between any two leaves
+% for your rig, e.g. using px/deg = screen_px_per_unit_distance * tan(1 deg)).
+% Everything about the leaf's size is a multiple of one base parameter,
+% leafSizePx - change that single number to scale the whole leaf up or
+% down, or tweak one multiplier below if only that dimension needs to move.
+fieldMarginPx = 0; % inset from the screen edge - 0 uses the full screen, leaves may clip at the edge
+
+leafSizePx = 90; % base leaf size (= leaf length in px)
+leafWidthMultiplier           = 0.42; % leafWidthPx           = leafSizePx * leafWidthMultiplier
+leafBorderThicknessMultiplier = 0.20; % leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier
+minLeafSeparationMultiplier   = 1.10; % minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier
+
+leafLengthPx          = leafSizePx;
+leafWidthPx           = leafSizePx * leafWidthMultiplier;
+leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier; % extra thickness added per side for the SSVEP border
+minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier;   % minimum center-to-center distance enforced between any two leaves
 leafSpeedPxPerSec     = 300;
 leafLifetimeSec       = 1.0; % how long a single leaf stays on screen before it respawns elsewhere
-numLeavesPerFlock     = 40;  % density = numLeavesPerFlock / (screen area in px^2).
+numLeavesPerFlock     = 25;  % density = numLeavesPerFlock / (screen area in px^2).
 % Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
 % field can only physically fit so many before the placement algorithm
 % can no longer find room and starts force-respawning leaves almost every
@@ -275,164 +284,120 @@ try
         accuracy = 0;
         responseTimeout = 0;
         validResponse = false;
+        inFeedback = false;
+        feedbackFramesRemaining = 0;
 
         trialStartTime = getElapsedTime(experimentStartTime);
         cueOnsetTime = NaN;
-        trialStopSent = false;
-        ssvepFrame = 0;
 
         disp(trialNumber);
         if ~ismac
             cog_send_triggers(paraport, 'trialstart');
         end
 
-        %% Pre-cue period (leaves neutral color, SSVEP already running, cue not yet revealed)
+        %% Single continuous trial loop: pre-cue -> cue onset/response -> feedback.
+        % One uninterrupted per-frame loop for the whole trial, rather than a
+        % separate loop per phase - each loop boundary previously added its own
+        % setup cost (an extra cedrus.resettimer(), per-loop first-frame
+        % bookkeeping) right at the visually critical pre-cue/post-cue
+        % transition, which showed up as a stutter. Phases are now just a
+        % comparison of currentFrame against pre-computed boundary frame
+        % numbers, so colors/text swap on the right iteration of one loop.
+        % currentFrame also doubles as the SSVEP time base - it increments
+        % every displayed frame from trial start onward, uninterrupted by
+        % whichever phase it's currently in.
         cueDelaySec = preCueConstantSec + truncatedExpRnd(preCueExpMeanSec, preCueExpMaxSec);
         preCueFrames = max(1, round(cueDelaySec / interFrameInterval));
+        cueOnsetFrame = preCueFrames + 1;
+        responseDeadlineFrame = preCueFrames + responseTimeoutFrames;
+        maxFrames = preCueFrames + responseTimeoutFrames + feedbackFrames;
 
-        for currentFrame = 1:preCueFrames
-            ssvepFrame = ssvepFrame + 1;
+        for currentFrame = 1:maxFrames
+            isPreCue = currentFrame < cueOnsetFrame;
+
             leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
             [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
-                ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
+                currentFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
 
             Screen('FillRect', window, grey);
-            drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
-                colorPreCue, colorPreCue, flock1BorderColor, flock2BorderColor);
-            Screen('FillRect', window, black, cueRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
+            if isPreCue
+                drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
+                    colorPreCue, colorPreCue, flock1BorderColor, flock2BorderColor);
+                Screen('FillRect', window, black, cueRect);
             else
-                Screen('Flip', window);
-            end
-
-            if checkEscape(escapeKey)
-                runBlockLoop = false;
-                break;
-            end
-        end
-        if ~runBlockLoop
-            if ~ismac && ~trialStopSent
-                cog_send_triggers(paraport, 'trialstop');
-                trialStopSent = true;
-            end
-            break;
-        end
-
-        %% Cue onset + response window (leaves take on their flock colors; fixation dot shows the cue)
-        if ~ismac
-            cedrus.resettimer();
-        end
-
-        for currentFrame = 1:responseTimeoutFrames
-            ssvepFrame = ssvepFrame + 1;
-            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
-            [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
-                ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
-
-            Screen('FillRect', window, grey);
-            drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
-                colorC1, colorC2, flock1BorderColor, flock2BorderColor);
-            Screen('FillRect', window, cueColor, cueRect);
-            Screen('TextSize', window, cueTextSize);
-            DrawFormattedText(window, cueWord, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
-
-            if ~ismac
-                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-                if currentFrame == 1
-                    cueOnsetTime = getElapsedTime(experimentStartTime);
-                    cog_send_triggers(paraport, 'cueonset');
-                    cedrus.resettimer();
-                end
-            else
-                Screen('Flip', window);
-                if currentFrame == 1
-                    cueOnsetTime = getElapsedTime(experimentStartTime);
-                end
-            end
-
-            if checkEscape(escapeKey)
-                runBlockLoop = false;
-                break;
-            end
-
-            if ~ismac
-                [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                    false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
-            else
-                [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                    true, [], leftKey, rightKey, upKey, downKey, cueOnsetTime);
-            end
-
-            if validResponse
-                accuracy = strcmp(participantResponse, correctResponse);
-                if ~ismac
-                    cog_send_triggers(paraport, 'response');
-                end
-                break;
-            end
-        end
-        if ~runBlockLoop
-            if ~ismac && ~trialStopSent
-                cog_send_triggers(paraport, 'trialstop');
-                trialStopSent = true;
-            end
-            break;
-        end
-
-        if ~validResponse
-            responseTimeout = 1;
-        end
-
-        %% Feedback (skipped entirely on timeout, per design)
-        if ~responseTimeout
-            if accuracy
-                feedbackString = 'Correct';
-                feedbackColor = green;
-            else
-                feedbackString = 'Incorrect';
-                feedbackColor = red;
-            end
-
-            for currentFrame = 1:feedbackFrames
-                ssvepFrame = ssvepFrame + 1;
-                leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
-                [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
-                    ssvepFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
-
-                Screen('FillRect', window, grey);
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     colorC1, colorC2, flock1BorderColor, flock2BorderColor);
                 Screen('FillRect', window, cueColor, cueRect);
                 Screen('TextSize', window, cueTextSize);
                 DrawFormattedText(window, cueWord, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
+            end
+            if inFeedback
                 Screen('TextSize', window, 48);
                 DrawFormattedText(window, feedbackString, 'center', feedbackY, feedbackColor);
+            end
 
+            if ~ismac
+                vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
+            else
+                Screen('Flip', window);
+            end
+
+            if currentFrame == cueOnsetFrame
+                cueOnsetTime = getElapsedTime(experimentStartTime);
                 if ~ismac
-                    vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
+                    cog_send_triggers(paraport, 'cueonset');
+                    cedrus.resettimer();
+                end
+            end
+
+            if checkEscape(escapeKey)
+                runBlockLoop = false;
+                break;
+            end
+
+            if inFeedback
+                feedbackFramesRemaining = feedbackFramesRemaining - 1;
+                if feedbackFramesRemaining <= 0
+                    break;
+                end
+            elseif ~isPreCue
+                if ~ismac
+                    [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
+                        false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
                 else
-                    Screen('Flip', window);
+                    [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
+                        true, [], leftKey, rightKey, upKey, downKey, cueOnsetTime);
                 end
 
-                if checkEscape(escapeKey)
-                    runBlockLoop = false;
+                if validResponse
+                    accuracy = strcmp(participantResponse, correctResponse);
+                    if ~ismac
+                        cog_send_triggers(paraport, 'response');
+                    end
+                    if accuracy
+                        feedbackString = 'Correct';
+                        feedbackColor = green;
+                    else
+                        feedbackString = 'Incorrect';
+                        feedbackColor = red;
+                    end
+                    inFeedback = true;
+                    feedbackFramesRemaining = feedbackFrames;
+                elseif currentFrame >= responseDeadlineFrame
+                    responseTimeout = 1;
                     break;
                 end
             end
-            if ~runBlockLoop
-                if ~ismac && ~trialStopSent
-                    cog_send_triggers(paraport, 'trialstop');
-                    trialStopSent = true;
-                end
-                break;
+        end
+        if ~runBlockLoop
+            if ~ismac
+                cog_send_triggers(paraport, 'trialstop');
             end
+            break;
         end
 
         if ~ismac
             cog_send_triggers(paraport, 'trialstop');
-            trialStopSent = true;
         end
 
         %% Log trial
