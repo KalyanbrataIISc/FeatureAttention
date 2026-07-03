@@ -130,17 +130,29 @@ itiDurationSec      = 1.000;  % blank inter-trial interval
 
 % Leaf geometry (pixels - convert to/from degrees of visual angle yourself
 % for your rig, e.g. using px/deg = screen_px_per_unit_distance * tan(1 deg))
-fieldMarginPx         = 60;  % inset from the screen edge so leaves aren't clipped
-leafLengthPx          = 45;
-leafWidthPx           = 19;
-leafBorderThicknessPx = 6;   % extra thickness added per side for the SSVEP border
-minLeafSeparationPx   = 68;  % minimum center-to-center distance enforced between any two leaves
-leafSpeedPxPerSec     = 150;
+fieldMarginPx         = 0;    % inset from the screen edge - 0 uses the full screen, leaves may clip at the edge
+leafLengthPx          = 90;
+leafWidthPx           = 38;
+leafBorderThicknessPx = 18;   % extra thickness added per side for the SSVEP border
+minLeafSeparationPx   = 100;  % minimum center-to-center distance enforced between any two leaves
+leafSpeedPxPerSec     = 300;
 leafLifetimeSec       = 1.0; % how long a single leaf stays on screen before it respawns elsewhere
-numLeavesPerFlock     = 30;  % density = numLeavesPerFlock / (screen area in px^2)
+numLeavesPerFlock     = 40;  % density = numLeavesPerFlock / (screen area in px^2).
+% Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
+% field can only physically fit so many before the placement algorithm
+% can no longer find room and starts force-respawning leaves almost every
+% frame (looks like leaves rapidly teleporting/flickering, regardless of
+% leafSpeedPxPerSec - that's a packing problem, not a speed one). At this
+% leaf size, a 1920x1080-ish field stays stable up to ~25/flock and
+% starts thrashing past ~30/flock - raise gradually and watch for that
+% symptom coming back.
 
-% Fixation dot / cue patch (same object: neutral pre-cue, cue-colored after cue onset)
-fixationDotDiameterPx = 15;
+% Cue rectangle (same object throughout the trial: neutral/black pre-cue,
+% solid colorC1/colorC2 with 'Pointing'/'Moving' written inside from cue onset on)
+cueRectWidthPx  = 220;
+cueRectHeightPx = 90;
+cueTextSize     = 32;
+colorCueText    = black;
 
 % Colors
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
@@ -174,12 +186,12 @@ Screen('TextSize', window, 40);
 Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 [xCenter, yCenter] = RectCenter(windowRect);
-dotRadius = fixationDotDiameterPx / 2;
-dotRect = [xCenter - dotRadius, yCenter - dotRadius, xCenter + dotRadius, yCenter + dotRadius];
+cueRect = [xCenter - cueRectWidthPx / 2, yCenter - cueRectHeightPx / 2, ...
+           xCenter + cueRectWidthPx / 2, yCenter + cueRectHeightPx / 2];
 feedbackY = yCenter - feedbackYOffsetPx;
 
 Screen('FillRect', window, grey);
-Screen('FillOval', window, black, dotRect);
+Screen('FillRect', window, black, cueRect);
 Screen('Flip', window);
 WaitSecs(1);
 
@@ -242,8 +254,10 @@ try
 
         if strcmp(cue, 'c1')
             cueColor = colorC1;
+            cueWord = 'Pointing';
         else
             cueColor = colorC2;
+            cueWord = 'Moving';
         end
 
         flock1Velocity = directionToVector(c1MoveDir) * leafSpeedPxPerFrame;
@@ -285,7 +299,7 @@ try
             Screen('FillRect', window, grey);
             drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                 colorPreCue, colorPreCue, flock1BorderColor, flock2BorderColor);
-            Screen('FillOval', window, black, dotRect);
+            Screen('FillRect', window, black, cueRect);
 
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
@@ -320,7 +334,9 @@ try
             Screen('FillRect', window, grey);
             drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                 colorC1, colorC2, flock1BorderColor, flock2BorderColor);
-            Screen('FillOval', window, cueColor, dotRect);
+            Screen('FillRect', window, cueColor, cueRect);
+            Screen('TextSize', window, cueTextSize);
+            DrawFormattedText(window, cueWord, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
 
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
@@ -388,7 +404,9 @@ try
                 Screen('FillRect', window, grey);
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     colorC1, colorC2, flock1BorderColor, flock2BorderColor);
-                Screen('FillOval', window, cueColor, dotRect);
+                Screen('FillRect', window, cueColor, cueRect);
+                Screen('TextSize', window, cueTextSize);
+                DrawFormattedText(window, cueWord, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
                 Screen('TextSize', window, 48);
                 DrawFormattedText(window, feedbackString, 'center', feedbackY, feedbackColor);
 
@@ -431,7 +449,7 @@ try
         %% ITI
         for currentFrame = 1:itiFrames
             Screen('FillRect', window, grey);
-            Screen('FillOval', window, black, dotRect);
+            Screen('FillRect', window, black, cueRect);
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
