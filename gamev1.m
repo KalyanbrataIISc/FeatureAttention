@@ -144,9 +144,9 @@ leafLengthPx          = leafSizePx;
 leafWidthPx           = leafSizePx * leafWidthMultiplier;
 leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier; % extra thickness added per side for the SSVEP border
 minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier;   % minimum center-to-center distance enforced between any two leaves
-leafSpeedPxPerSec     = 300;
-leafLifetimeSec       = 1.0; % how long a single leaf stays on screen before it respawns elsewhere
-numLeavesPerFlock     = 25;  % density = numLeavesPerFlock / (screen area in px^2).
+leafSpeedPxPerSec     = 200;
+leafLifetimeSec       = 2.0; % how long a single leaf stays on screen before it respawns elsewhere
+numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^2).
 % Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
 % field can only physically fit so many before the placement algorithm
 % can no longer find room and starts force-respawning leaves almost every
