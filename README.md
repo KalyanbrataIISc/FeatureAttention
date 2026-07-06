@@ -49,13 +49,27 @@ with either flock's cue color or with the SSVEP border's black/white
 flicker extremes). At cue onset, both flocks simultaneously switch to their
 real colors (`colorC1`/`colorC2`).
 
-The cue itself is a solid rectangle at screen center (`cueRect`):
-before cue onset it's plain black/neutral with no text; from cue onset
-through feedback it fills with the cued color and shows the word
-**"Pointing"** (cue = c1) or **"Moving"** (cue = c2) so the rule is spelled
-out directly, not just color-coded.
+The cue itself is a solid, rounded-corner rectangle at screen center
+(`cueRect`, drawn via `helperFunctions/drawRoundedRect.m`): before cue onset
+it's plain black/neutral with no text; from cue onset it fills with the
+cued color and shows the word **"Pointing"** (cue = c1) or **"Moving"**
+(cue = c2) so the rule is spelled out directly, not just color-coded. Once
+a response is given, that same word is replaced by the response feedback
+("Correct"/"Incorrect", in green/red) inside the same box — feedback is
+never shown anywhere else on screen.
 
 ## Trial timeline
+
+All phases below run inside a **single continuous per-frame loop** in
+`gamev1.m` (not a separate loop per phase) — `currentFrame` is just compared
+against pre-computed phase-boundary frame numbers (`cueOnsetFrame`,
+`responseDeadlineFrame`) to decide what to draw. This was a deliberate fix:
+separate loops per phase meant extra setup work (a second
+`cedrus.resettimer()`, per-loop first-frame bookkeeping) landing right on
+the pre-cue → post-cue transition, which showed up as a visible stutter.
+`currentFrame` also doubles as the SSVEP time base, since it already
+increments every displayed frame from trial start onward regardless of
+phase.
 
 1. **Trial start** — trigger `trialstart` sent, leaves reset to fresh
    random positions/lifetimes/directions, both flocks drawn in
@@ -72,9 +86,11 @@ out directly, not just color-coded.
    onset). A valid response sends trigger `response` and ends the window
    immediately; otherwise it's a timeout.
 5. **Feedback** — only shown if a response was given (a timeout skips
-   straight to trial end, no feedback text). Green "Correct" / red
-   "Incorrect" for `feedbackDurationSec`, drawn above the leaf field. Leaves
-   keep moving and the SSVEP border keeps flickering throughout.
+   straight to trial end, no feedback at all). The cue box's word switches
+   to green "Correct" / red "Incorrect" for `feedbackDurationSec`, in the
+   same box, replacing "Pointing"/"Moving" — no separate feedback text
+   elsewhere on screen. Leaves keep moving and the SSVEP border keeps
+   flickering throughout.
 6. **Trial end** — trigger `trialstop` sent, the trial row is appended to
    the CSV, then a blank `itiDurationSec` gap before the next trial.
 
@@ -127,12 +143,19 @@ ResponseTimeout, TrialEnd
 - `gamev1.m` — the experiment script (init → participant/block info → CSV
   header → PsychToolbox setup → `%% PARAMETERS` → screen open → trial loop
   → cleanup).
+- `gameNF.m` — the neurofeedback variant of the same script; see
+  [Neurofeedback variant](#neurofeedback-variant-gamenfm) above.
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
-  motion/collision, SSVEP color computation, response mapping, timing jitter).
-  New helper functions belong here, one function per file — this MATLAB
-  version doesn't support local functions inside a script.
+  motion/collision, SSVEP color computation, response mapping, timing jitter,
+  the rounded-rect cue box, NF file reading/color mapping, CSV
+  header-mismatch-safe file creation). New helper functions belong here, one
+  function per file — this MATLAB version doesn't support local functions
+  inside a script.
+- `nf.txt` — binary NF data file in the project root, continuously
+  overwritten by the external real-time acquisition process; read (not
+  written) by `gameNF.m`.
 - `data/` — per-participant/block CSV logs (created on first run).
 
 ## Running it
@@ -140,12 +163,112 @@ ResponseTimeout, TrialEnd
 Open and run `gamev1.m` in MATLAB with PsychToolbox installed. On Windows
 you'll be prompted for participant number, block number, and whether to run
 eye tracking; on mac these default automatically (participant/block `000`,
-eye tracking off) so it just launches straight into the task. Press any key
-to start the block; ESC exits at any point. All tunable values (timing,
-leaf size/speed/count, colors, SSVEP frequencies, cue rectangle) are in the
+eye tracking off) so it just launches straight into the task.
+
+Before the block starts, a one-time instructions screen explains the task
+in text and shows two **static** (non-moving) example leaves — one in
+`colorC1` labeled "use its POINTING direction", one in `colorC2` labeled
+"use its MOVING direction" — so the color/rule mapping is shown concretely
+rather than only described. Press any key/button on that screen to begin;
+ESC exits at any point during the block. All tunable values (timing, leaf
+size/speed/count, colors, SSVEP frequencies, cue rectangle) are in the
 `%% PARAMETERS` block near the top of `gamev1.m`.
 
+## Neurofeedback variant (`gameNF.m`)
+
+`gameNF.m` is a second, independent copy of the same task with one addition:
+real-time SSVEP neurofeedback (NF) driven by an external real-time EEG
+acquisition process. It shares every stimulus/trial-flow detail described
+above except for the differences below.
+
+**NF stimulus — leaf fill color.** Before cue onset, and whenever
+lateralisation is zero or in the wrong direction after cue onset, each
+flock's leaf fill is exactly `grey` — the same solid color the background
+is filled with — so the leaf body is indistinguishable from the background
+(there is no more separate `colorPreCue` blend). The only thing that stays
+visible regardless is the flickering SSVEP border ring: a separate, larger
+polygon drawn underneath the fill (see `helperFunctions/drawLeaves.m`) that
+this NF logic never touches — modulating it would contaminate the very
+SSVEP signal being fed back.
+
+From cue onset, fill moves from `grey` toward the flock's own cue color
+(`colorC1`/`colorC2`) in proportion to the participant's real-time SSVEP
+power lateralisation in the cue-consistent direction — the leaves become
+more distinctly colored the more the participant's brain signal is
+lateralised the *correct* way for the current cue.
+
+**Baseline reveal at cue onset.** If fill only ever depended on live NF, a
+participant with no lateralisation yet would see both flocks as identical
+grey right when the cue appears — no way to tell which flock is which, so
+no way to know where to start attending. To avoid that, `nfBaselineWeight`
+(0.15 default) is a fixed, immediate reveal applied the instant the cue
+comes on, regardless of the live NF value — a deliberately subtle glimpse
+of each flock's true color. Live NF then rescales *on top of* that
+baseline, from `nfBaselineWeight` (nf ≤ 0) up to fully-saturated
+`colorC1`/`colorC2` (nf ≥ 1) — see `helperFunctions/computeNfLeafColor.m`.
+
+**Data source — `nf.txt`.** An external real-time acquisition process
+(`RT_acquisition_7`, outside this repo) continuously overwrites
+`nf.txt` (in the project root, `nfFilePath` in `gameNF.m`) with a 5-element
+binary double vector: `[AMI_dir1, AMI_dir2, SMI_14gt18, SMI_18gt14,
+sampleCount]`. Only the SMI pair (indices 3/4) is used — the 14Hz-vs-18Hz
+SSVEP power separation. `helperFunctions/readNFValue.m` reads a single
+indexed value from this file (returning `0`, i.e. neutral, if the file is
+missing or caught mid-write by the external process).
+
+**Which column, and when it's decided.** Which of the two SMI columns is
+"correct" depends on the trial's cue and never changes mid-trial, so it's
+decided once at trial setup (before the trial's frame loop starts): cue
+`c1` (14Hz) uses column 3 (positive when 14Hz > 18Hz), cue `c2` (18Hz) uses
+column 4 (positive when 18Hz > 14Hz).
+
+**Read cadence vs. visual gating.** `nf.txt` is re-read every
+`nfUpdateIntervalSec` (100ms default) starting at trial start (frame 1) —
+continuing through the response and feedback phases — regardless of trial
+phase. Only the *visual effect* is gated: pre-cue frames always render
+plain `grey` with no NF influence at all (not even the baseline reveal), so
+no cue-consistent information leaks before cue onset. No moving-average
+window is applied to the live NF value, unlike the neurofeedback experiment
+this borrows the `nf.txt` protocol from.
+
+**Response window.** `responseTimeoutSec` is 10s (vs. 4s in `gamev1.m`), to
+give the participant more time to work with the NF-driven coloring before
+the window closes.
+
+**CSV output.** In addition to the same per-trial CSV as `gamev1.m`
+(`p<participant>_b<block>_leaves_trialdata.csv`), `gameNF.m` also writes a
+second, per-NF-read trace file,
+`p<participant>_b<block>_leaves_nftrace.csv` (one row per ~100ms `nf.txt`
+read, for the whole trial):
+
+```
+TrialNumber, FrameNumber, SampleTime, NFIndexUsed, NFValueRaw,
+NFValueClipped, PostCueOnset
+```
+
+`NFValueRaw` is the raw value read from `nf.txt` (unclipped, can be outside
+`[0, 1]` or even outside `[-1, 1]`); `NFValueClipped` is what actually drove
+the leaf color that frame; `PostCueOnset` (0/1) marks whether that read
+occurred after cue onset (i.e. whether it was actually visible) or during
+the pre-cue phase (read, logged, but not shown). Both of `gameNF.m`'s CSV
+files get the same header-mismatch-safe-fallback behavior as `gamev1.m`'s
+main CSV, via the shared `helperFunctions/ensureCsvWithHeader.m` (`gamev1.m`
+itself still does this inline, unchanged).
+
+**Testing without real EEG hardware.** In the experiment room (Windows),
+`RT_acquisition_7` (outside this repo) is the real writer of `nf.txt`. For
+local/mac testing, [`simulate_nf.py`](simulate_nf.py) writes randomized
+values into `nf.txt` in the same 5-double binary format, at the same
+~101.6ms cadence RT_acquisition_7 uses (13 samples at its 128Hz EEG rate) -
+each of the 5 values does its own bounded random walk rather than jumping
+independently every write, so the leaf-color modulation in `gameNF.m`
+responds the way it would to a real, smoothly-drifting SSVEP signal. Run
+`python3 simulate_nf.py --path nf.txt` (from the repo root) alongside
+`gameNF.m` to exercise the NF path without hardware; it does not know about
+trial boundaries and just free-runs continuously.
+
 ---
-**Keeping this file in sync**: whenever `gamev1.m` (or its helper functions)
-changes in a way that affects behavior, parameters, timing, triggers, or CSV
-columns, update this README to match in the same change. See `CLAUDE.md`.
+**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m` (or their
+helper functions) changes in a way that affects behavior, parameters,
+timing, triggers, or CSV columns, update this README to match in the same
+change. See `CLAUDE.md`.

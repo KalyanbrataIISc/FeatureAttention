@@ -53,25 +53,15 @@ csvBaseDir = fullfile(experimentRoot, 'data');
 if ~exist(csvBaseDir, 'dir')
     mkdir(csvBaseDir);
 end
-csvFile = fullfile(csvBaseDir, sprintf('%s_leaves_trialdata.csv', sessionTag));
 csvHeader = ['TrialNumber,TrialStart,C1PointDir,C1MoveDir,C2PointDir,C2MoveDir,Cue,CueOnsetTime,' ...
     'CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout,TrialEnd'];
-if ~exist(csvFile, 'file')
-    fid = fopen(csvFile, 'w');
-    fprintf(fid, '%s\n', csvHeader);
-    fclose(fid);
-else
-    fid = fopen(csvFile, 'r');
-    existingCsvHeader = fgetl(fid);
-    fclose(fid);
-    if ~ischar(existingCsvHeader) || ~strcmp(strtrim(existingCsvHeader), csvHeader)
-        csvFile = fullfile(csvBaseDir, sprintf('%s_leaves_trialdata_%s.csv', sessionTag, datestr(now, 'yyyymmdd_HHMMSS')));
-        fid = fopen(csvFile, 'w');
-        fprintf(fid, '%s\n', csvHeader);
-        fclose(fid);
-        fprintf('Existing CSV header did not match. Writing this run to %s\n', csvFile);
-    end
-end
+csvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_trialdata.csv', sessionTag), csvHeader);
+
+% Per-~100ms NF trace (one row per nf.txt read), separate file so the
+% one-row-per-trial main CSV above stays unchanged in shape.
+nfTraceCsvHeader = ['TrialNumber,FrameNumber,SampleTime,NFIndexUsed,' ...
+    'NFValueRaw,NFValueClipped,PostCueOnset'];
+nfTraceCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_nftrace.csv', sessionTag), nfTraceCsvHeader);
 
 % Cedrus:   Up button       = 1
 %           Right button    = 5
@@ -124,7 +114,9 @@ cueList = cueList(randperm(numel(cueList)));
 preCueConstantSec   = 1.000;  % fixed foreperiod before the hazard-uniform jitter
 preCueExpMeanSec    = 3.000;  % mean of the exponential jitter added to the foreperiod
 preCueExpMaxSec     = 10.000;  % truncation cap on the exponential jitter (keeps trials bounded)
-responseTimeoutSec  = 4.000;  % response window, timed from cue onset
+responseTimeoutSec  = 10.000;  % response window, timed from cue onset - longer than gamev1.m's
+% 4s to give the participant time to work with the NF-driven leaf coloring
+% (see NEUROFEEDBACK PARAMETERS below) before the window closes.
 feedbackDurationSec = 1.000;  % 'Correct'/'Incorrect' feedback display time
 itiDurationSec      = 1.000;  % blank inter-trial interval
 
@@ -172,17 +164,44 @@ instructionsTextSize = 26;
 % Colors
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
 colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
-colorPreCue    = (colorC1 + colorC2) / 2;  % leaf color before cue onset - the
-% midpoint of colorC1/colorC2 so it never coincides with either flock's
-% post-cue color, and (for two reasonably distinct, saturated colors)
-% naturally falls away from pure black/white too, so the full black<->white
-% SSVEP border swing stays visible throughout the whole trial.
 colorBorderLow  = black;  % SSVEP flicker low-luminance border color
 colorBorderHigh = white;  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
 freqC1Hz = 14;
 freqC2Hz = 18;
+
+% =================== NEUROFEEDBACK (SSVEP lateralisation) ===================
+% The NF stimulus is the leaf fill color itself. Before cue onset, and at
+% zero/wrong-direction lateralisation after cue onset, each flock's fill is
+% exactly `grey` - the same solid color the background is filled with - so
+% the leaf body is indistinguishable from the background (only the
+% flickering SSVEP border ring, a separate, larger polygon drawn underneath
+% and never touched by any of this, stays visible). From cue onset, fill
+% moves from grey toward the flock's own cue color (colorC1/colorC2) in
+% proportion to real-time SSVEP power lateralisation favoring this trial's
+% cued frequency - i.e. the leaves become more distinctly colored the more
+% the participant's SSVEP is lateralised the right way.
+%
+% Right at cue onset, a small nfBaselineWeight reveal is applied regardless
+% of the live NF value - a deliberate, immediate, subtle glimpse of each
+% flock's true color so the participant can tell the two flocks apart and
+% knows where to start attending, rather than waiting on their own
+% not-yet-achieved correct lateralisation to reveal it. This is driven
+% purely off nf.txt (written externally by RT_acquisition_7) - no
+% moving-average window is applied here, unlike that prior experiment.
+%
+% nf.txt is a 5-element double vector [AMI_dir1, AMI_dir2, SMI_14gt18,
+% SMI_18gt14, sampleCount]; only the SMI pair (indices 3/4) is used, since
+% that is the 14Hz-vs-18Hz SSVEP power separation this task's NF reflects.
+% Which of the two columns is "correct" for a trial depends on that
+% trial's cue and is fixed once at trial setup (before the trial's frame
+% loop starts), since the cue itself never changes mid-trial.
+nfFilePath          = fullfile(experimentRoot, 'nf.txt');
+nfUpdateIntervalSec = 0.100;  % how often nf.txt is re-read (matches its external write cadence)
+nfIndexC1           = 3;      % nf.txt column: positive when 14Hz (c1) SSVEP power exceeds 18Hz
+nfIndexC2           = 4;      % nf.txt column: positive when 18Hz (c2) SSVEP power exceeds 14Hz
+nfBaselineWeight    = 0.01;   % fixed reveal applied immediately at cue onset, before any live NF contribution
 
 %% Initialise the screen
 screens = Screen('Screens');
@@ -220,6 +239,7 @@ responseTimeoutFrames = max(1, round(responseTimeoutSec / interFrameInterval));
 feedbackFrames = max(1, round(feedbackDurationSec / interFrameInterval));
 itiFrames = max(1, round(itiDurationSec / interFrameInterval));
 leafLifetimeFrames = max(1, round(leafLifetimeSec / interFrameInterval));
+nfUpdateIntervalFrames = max(1, round(nfUpdateIntervalSec / interFrameInterval));
 
 % Per-frame speed, and the leaf field rect (needs interFrameInterval/windowRect, known only now)
 leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
@@ -309,10 +329,21 @@ try
         if strcmp(cue, 'c1')
             cueColor = colorC1;
             cueWord = 'Pointing';
+            nfIndex = nfIndexC1;
         else
             cueColor = colorC2;
             cueWord = 'Moving';
+            nfIndex = nfIndexC2;
         end
+
+        % NF state for this trial (nfIndex above is fixed for the whole
+        % trial - predetermined here, before the trial's frame loop starts).
+        nfCurrentValueRaw = 0;
+        nfTraceFrameNumber = [];
+        nfTraceSampleTime = [];
+        nfTraceValueRaw = [];
+        nfTraceValueClipped = [];
+        nfTracePostCue = [];
 
         flock1Velocity = directionToVector(c1MoveDir) * leafSpeedPxPerFrame;
         flock2Velocity = directionToVector(c2MoveDir) * leafSpeedPxPerFrame;
@@ -360,6 +391,18 @@ try
         for currentFrame = 1:maxFrames
             isPreCue = currentFrame < cueOnsetFrame;
 
+            % NF stream starts at trial start (frame 1) and re-reads nf.txt
+            % every nfUpdateIntervalFrames (~100ms), regardless of trial
+            % phase - only its visual effect (below) is gated to post-cue.
+            if mod(currentFrame - 1, nfUpdateIntervalFrames) == 0
+                nfCurrentValueRaw = readNFValue(nfFilePath, nfIndex);
+                nfTraceFrameNumber(end+1) = currentFrame; %#ok<SAGROW>
+                nfTraceSampleTime(end+1) = getElapsedTime(experimentStartTime); %#ok<SAGROW>
+                nfTraceValueRaw(end+1) = nfCurrentValueRaw; %#ok<SAGROW>
+                nfTraceValueClipped(end+1) = max(0, min(1, nfCurrentValueRaw)); %#ok<SAGROW>
+                nfTracePostCue(end+1) = ~isPreCue; %#ok<SAGROW>
+            end
+
             leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
             [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
                 currentFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
@@ -367,11 +410,13 @@ try
             Screen('FillRect', window, grey);
             if isPreCue
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
-                    colorPreCue, colorPreCue, flock1BorderColor, flock2BorderColor);
+                    grey, grey, flock1BorderColor, flock2BorderColor);
                 drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
             else
+                flock1FillColor = computeNfLeafColor(grey, colorC1, nfCurrentValueRaw, nfBaselineWeight);
+                flock2FillColor = computeNfLeafColor(grey, colorC2, nfCurrentValueRaw, nfBaselineWeight);
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
-                    colorC1, colorC2, flock1BorderColor, flock2BorderColor);
+                    flock1FillColor, flock2FillColor, flock1BorderColor, flock2BorderColor);
                 drawRoundedRect(window, cueColor, cueRect, cueRectCornerRadiusPx);
                 Screen('TextSize', window, cueTextSize);
                 if inFeedback
@@ -456,6 +501,15 @@ try
         fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%.6f,%s,%s,%d,%.6f,%d,%.6f\n', ...
             trialNumber, trialStartTime, c1PointDir, c1MoveDir, c2PointDir, c2MoveDir, cue, cueOnsetTime, ...
             correctResponse, participantResponse, accuracy, reactionTime, responseTimeout, trialEndTime);
+        fclose(fid);
+
+        %% Log NF trace for this trial (one row per ~100ms nf.txt read)
+        fid = fopen(nfTraceCsvFile, 'a');
+        for r = 1:numel(nfTraceFrameNumber)
+            fprintf(fid, '%d,%d,%.6f,%d,%.6f,%.6f,%d\n', ...
+                trialNumber, nfTraceFrameNumber(r), nfTraceSampleTime(r), nfIndex, ...
+                nfTraceValueRaw(r), nfTraceValueClipped(r), nfTracePostCue(r));
+        end
         fclose(fid);
 
         %% ITI
