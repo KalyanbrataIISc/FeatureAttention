@@ -27,26 +27,6 @@ its `%% PARAMETERS` block near the top.
   visibly overlapping/colliding, while still looking like a continuously
   streaming dot field. See `helperFunctions/updateLeaves.m` and
   `helperFunctions/findValidLeafPosition.m`.
-- **Even spatial density, not just collision-avoidance**: that fresh
-  respawn position isn't picked uniformly at random over the whole field -
-  plain uniform sampling has nothing stopping several respawns in a row
-  from landing in the same already-crowded region, which reads as visible
-  clustering/gaps. Instead, the field is divided into a grid sized so each
-  cell holds about one leaf on average, and a respawn is drawn from
-  whichever cell currently holds the *fewest* leaves (ties broken
-  randomly), then jittered within it and checked against
-  `minLeafSeparationPx` as before. Since this runs on every respawn (not
-  just at trial start), it keeps rebalancing toward whatever's currently
-  sparse as leaves drift, so density stays even over time too - measured
-  (via a coverage-grid occupancy-std-dev metric, averaged over 15 seeds) to
-  meaningfully beat plain uniform-random both at trial start and over 15s
-  of simulated respawns. The grid's geometry itself (cell counts/sizes)
-  only depends on the field size, `minLeafSeparationPx`, and leaf count -
-  none of which change mid-experiment - so both `gamev1.m`/`gameNF.m`
-  compute it once via `helperFunctions/computeLeafPlacementGrid.m` right
-  after `fieldRect` is known, rather than recomputing it (via `sqrt`/
-  `floor`) on every respawn throughout the whole block of trials. See
-  `helperFunctions/findValidLeafPosition.m`.
 - **Sizing**: all leaf dimensions are multiples of one base parameter,
   `leafSizePx` (see `helperFunctions/createLeafShape.m` for the actual
   geometry). Scale the whole leaf up/down with that one number, or nudge an
@@ -168,9 +148,8 @@ ResponseTimeout, TrialEnd
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
-  motion/collision, leaf-placement grid precomputation, SSVEP color
-  computation, response mapping, timing jitter, the rounded-rect cue box,
-  NF file reading/color mapping/lookup-table precomputation, sRGB↔CIELAB
+  motion/collision, SSVEP color computation, response mapping, timing jitter,
+  the rounded-rect cue box, NF file reading/color mapping, sRGB↔CIELAB
   conversion, CSV header-mismatch-safe file creation). New helper functions
   belong here, one function per file — this MATLAB version doesn't support
   local functions inside a script.
@@ -246,23 +225,6 @@ up front and precomputes each flock's own total Lab distance to grey
 both flocks at a given reveal state (`nfBaselineDeltaE` at nf ≤ 0, scaling
 up to each flock's own `maxDeltaE` at nf ≥ 1 so both still land exactly on
 their true saturated color), converting back to sRGB for `Screen`.
-
-**That CIELAB math is precomputed into a lookup table, not run per frame.**
-`computeNfLeafColor.m`'s conversion involves several non-integer
-power/exponent calls (gamma decode/encode) - measurably heavier than
-`computeSsvepBorderColors.m`'s plain `sin()`, and running it twice per
-frame (once per flock) for the whole post-cue period was adding enough
-delay before each `Screen('Flip', ...)` to measurably drift the SSVEP
-tagging frequency, which breaks phase-locked power spectral analysis on the
-recorded EEG. Since the nf→color mapping never depends on anything that
-changes mid-experiment (only `nfCurrentValueRaw` itself does, and that's
-read fresh from `nf.txt` every frame regardless), `gameNF.m` calls
-`helperFunctions/buildNfColorLut.m` once, up front, to precompute the
-entire mapping as a 1001-row sRGB table per flock; the frame loop then
-calls `helperFunctions/lookupNfColor.m`, which is just a clip and an array
-index - no CIELAB math in the per-frame path at all. Quantization at that
-resolution is <1 RGB unit versus the direct computation (visually
-identical), and the lookup measured ~10x faster in isolation.
 
 **Data source — `nf.txt`.** An external real-time acquisition process
 (`RT_acquisition_7`, outside this repo) continuously overwrites

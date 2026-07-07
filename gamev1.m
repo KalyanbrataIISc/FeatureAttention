@@ -227,11 +227,6 @@ leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
 fieldRect = [windowRect(1) + fieldMarginPx, windowRect(2) + fieldMarginPx, ...
              windowRect(3) - fieldMarginPx, windowRect(4) - fieldMarginPx];
 
-% Leaf placement grid geometry, precomputed once here rather than
-% recomputed (via sqrt/floor) on every respawn throughout the whole block
-% of trials - see computeLeafPlacementGrid.m/findValidLeafPosition.m.
-leafPlacementGrid = computeLeafPlacementGrid(fieldRect, minLeafSeparationPx, numLeavesPerFlock * 2);
-
 %% Block Loop
 runBlockLoop = true;
 trialNumber = 1;
@@ -327,7 +322,7 @@ try
         flock2InnerShape = createLeafShape(c2PointDir, leafLengthPx, leafWidthPx);
         flock2OuterShape = createLeafShape(c2PointDir, leafLengthPx + 2 * leafBorderThicknessPx, leafWidthPx + 2 * leafBorderThicknessPx);
 
-        leaves = initLeaves(numLeavesPerFlock, fieldRect, minLeafSeparationPx, leafLifetimeFrames, flock1Velocity, flock2Velocity, leafPlacementGrid);
+        leaves = initLeaves(numLeavesPerFlock, fieldRect, minLeafSeparationPx, leafLifetimeFrames, flock1Velocity, flock2Velocity);
 
         participantResponse = 'missed';
         reactionTime = NaN;
@@ -365,7 +360,7 @@ try
         for currentFrame = 1:maxFrames
             isPreCue = currentFrame < cueOnsetFrame;
 
-            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames, leafPlacementGrid);
+            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
             [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
                 currentFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
 
