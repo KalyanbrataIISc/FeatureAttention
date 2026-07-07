@@ -27,6 +27,20 @@ its `%% PARAMETERS` block near the top.
   visibly overlapping/colliding, while still looking like a continuously
   streaming dot field. See `helperFunctions/updateLeaves.m` and
   `helperFunctions/findValidLeafPosition.m`.
+- **Even spatial density, not just collision-avoidance**: that fresh
+  respawn position isn't picked uniformly at random over the whole field -
+  plain uniform sampling has nothing stopping several respawns in a row
+  from landing in the same already-crowded region, which reads as visible
+  clustering/gaps. Instead, the field is divided into a grid sized so each
+  cell holds about one leaf on average, and a respawn is drawn from
+  whichever cell currently holds the *fewest* leaves (ties broken
+  randomly), then jittered within it and checked against
+  `minLeafSeparationPx` as before. Since this runs on every respawn (not
+  just at trial start), it keeps rebalancing toward whatever's currently
+  sparse as leaves drift, so density stays even over time too - measured
+  (via a coverage-grid occupancy-std-dev metric, averaged over 15 seeds) to
+  meaningfully beat plain uniform-random both at trial start and over 15s
+  of simulated respawns. See `helperFunctions/findValidLeafPosition.m`.
 - **Sizing**: all leaf dimensions are multiples of one base parameter,
   `leafSizePx` (see `helperFunctions/createLeafShape.m` for the actual
   geometry). Scale the whole leaf up/down with that one number, or nudge an

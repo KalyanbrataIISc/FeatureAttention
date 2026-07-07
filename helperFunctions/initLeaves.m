@@ -23,7 +23,7 @@ function leaves = initLeaves(numLeavesPerFlock, fieldRect, minSeparationPx, maxL
         idx = placementOrder(i);
         placedSoFar = placementOrder(1:i-1);
         existingPositions = [x(placedSoFar), y(placedSoFar)];
-        newPosition = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx);
+        newPosition = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx, totalLeaves);
         x(idx) = newPosition(1);
         y(idx) = newPosition(2);
     end

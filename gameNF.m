@@ -113,7 +113,7 @@ cueList = cueList(randperm(numel(cueList)));
 % Timing in seconds, converted to frames after the measured refresh rate is known
 preCueConstantSec   = 1.000;  % fixed foreperiod before the hazard-uniform jitter
 preCueExpMeanSec    = 3.000;  % mean of the exponential jitter added to the foreperiod
-preCueExpMaxSec     = 10.000;  % truncation cap on the exponential jitter (keeps trials bounded)
+preCueExpMaxSec     = 5.000;  % truncation cap on the exponential jitter (keeps trials bounded)
 responseTimeoutSec  = 10.000;  % response window, timed from cue onset - longer than gamev1.m's
 % 4s to give the participant time to work with the NF-driven leaf coloring
 % (see NEUROFEEDBACK PARAMETERS below) before the window closes.
@@ -137,7 +137,7 @@ leafWidthPx           = leafSizePx * leafWidthMultiplier;
 leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier; % extra thickness added per side for the SSVEP border
 minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier;   % minimum center-to-center distance enforced between any two leaves
 leafSpeedPxPerSec     = 200;
-leafLifetimeSec       = 2.0; % how long a single leaf stays on screen before it respawns elsewhere
+leafLifetimeSec       = 5.0; % how long a single leaf stays on screen before it respawns elsewhere
 numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^2).
 % Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
 % field can only physically fit so many before the placement algorithm
@@ -164,12 +164,14 @@ instructionsTextSize = 25;
 % Colors
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
 colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
-colorBorderLow  = black;  % SSVEP flicker low-luminance border color
-colorBorderHigh = white;  % SSVEP flicker high-luminance border color
+SSVEPContrastGap = 150;
+shiftValue = round((255 - 100)/2);
+colorBorderLow  = black + shiftValue;  % SSVEP flicker low-luminance border color
+colorBorderHigh = white - shiftValue;  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
-freqC1Hz = 14;
-freqC2Hz = 18;
+freqC1Hz = 17;
+freqC2Hz = 20;
 
 % =================== NEUROFEEDBACK (SSVEP lateralisation) ===================
 % The NF stimulus is the leaf fill color itself. Before cue onset, and at
