@@ -1,16 +1,25 @@
-function nfVal = readNFValue(pathToNF, nfIndex)
+function [nfVal, readOk] = readNFValue(pathToNF, nfIndex)
 % readNFValue  Reads the nfIndex-th double from the binary NF file written
 % externally by the real-time SSVEP acquisition process (RT_acquisition_7),
 % which fwrites a 5-element double vector [AMI_dir1, AMI_dir2, SMI_14gt18,
-% SMI_18gt14, sampleCount] roughly every 100 ms. Returns 0 (neutral - no
-% lateralisation) if the file is missing, unreadable, or caught mid-write
-% by the external process and shorter than expected, so a transient race
-% with the writer never crashes the trial loop.
+% SMI_18gt14, sampleCount] roughly every 100 ms via fopen(...,'w') -
+% truncating the file to empty before writing the fresh bytes - then
+% fwrite then fclose. Same lean fopen/fread/fclose read
+% testing2DGoalField.m uses every frame, with no separate exist() check
+% beforehand - fopen's own return value already tells us if the file
+% couldn't be opened, so a second filesystem call to ask the same question
+% first would just be redundant overhead on every one of the 60-ish calls
+% this makes per second for the whole experiment.
+%
+% readOk is false whenever the file couldn't be opened or was caught
+% mid-write by the external process (and so is shorter than expected).
+% This is a plain I/O race (we're reading every displayed frame, much
+% faster than the file is rewritten), not a genuine "zero lateralisation"
+% sample - callers should keep using their last successfully-read value
+% rather than treat readOk=false as a real measurement of 0.
 
     nfVal = 0;
-    if ~exist(pathToNF, 'file')
-        return;
-    end
+    readOk = false;
 
     fid = fopen(pathToNF, 'r');
     if fid == -1
@@ -21,5 +30,6 @@ function nfVal = readNFValue(pathToNF, nfIndex)
 
     if numel(temp) >= nfIndex
         nfVal = temp(nfIndex);
+        readOk = true;
     end
 end

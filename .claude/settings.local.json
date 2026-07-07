@@ -6,7 +6,8 @@
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/diagnose_thrash.m'\\)\")",
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/find_max_density.m'\\)\")",
       "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/find_density_2x.m'\\)\")",
-      "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/verify_merged_loop.m'\\)\")"
+      "Bash(/Applications/MATLAB_R2023a.app/bin/matlab -nodisplay -nosplash -batch \"run\\('/private/tmp/claude-501/-Users-kalyanbrata-Documents-MATLAB-FeatureAttention/33f2eeb0-2942-4512-961c-ac4290e816af/scratchpad/verify_merged_loop.m'\\)\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

@@ -149,10 +149,10 @@ ResponseTimeout, TrialEnd
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
   motion/collision, SSVEP color computation, response mapping, timing jitter,
-  the rounded-rect cue box, NF file reading/color mapping, CSV
-  header-mismatch-safe file creation). New helper functions belong here, one
-  function per file — this MATLAB version doesn't support local functions
-  inside a script.
+  the rounded-rect cue box, NF file reading/color mapping, sRGB↔CIELAB
+  conversion, CSV header-mismatch-safe file creation). New helper functions
+  belong here, one function per file — this MATLAB version doesn't support
+  local functions inside a script.
 - `nf.txt` — binary NF data file in the project root, continuously
   overwritten by the external real-time acquisition process; read (not
   written) by `gameNF.m`.
@@ -200,12 +200,31 @@ lateralised the *correct* way for the current cue.
 **Baseline reveal at cue onset.** If fill only ever depended on live NF, a
 participant with no lateralisation yet would see both flocks as identical
 grey right when the cue appears — no way to tell which flock is which, so
-no way to know where to start attending. To avoid that, `nfBaselineWeight`
-(0.15 default) is a fixed, immediate reveal applied the instant the cue
-comes on, regardless of the live NF value — a deliberately subtle glimpse
-of each flock's true color. Live NF then rescales *on top of* that
-baseline, from `nfBaselineWeight` (nf ≤ 0) up to fully-saturated
-`colorC1`/`colorC2` (nf ≥ 1) — see `helperFunctions/computeNfLeafColor.m`.
+no way to know where to start attending. To avoid that, `nfBaselineDeltaE`
+(12 default) is a fixed, immediate reveal applied the instant the cue comes
+on, regardless of the live NF value — a deliberately subtle glimpse of each
+flock's true color. Live NF then rescales *on top of* that baseline, from
+`nfBaselineDeltaE` (nf ≤ 0) up to fully-saturated `colorC1`/`colorC2`
+(nf ≥ 1).
+
+**Reveal is calibrated by perceived color difference, not raw RGB.** The
+reveal amount (both the fixed baseline and the live-NF growth on top of it)
+is driven by CIELAB Delta E — perceived color difference from grey — not a
+raw RGB blend fraction. A rig test showed the same blend fraction (e.g.
+"15% of the way from grey to the target color, in RGB") looked clearly
+more intense for one flock's color than the other's: `colorC1` (deep sky
+blue) and `colorC2` (dark orange) are not equally different from grey to
+the eye, even though they're a similar RGB distance from it (measured Delta
+E from `grey` is ≈50 for `colorC1` vs. ≈85 for `colorC2` with the current
+colors — a ~1.7x difference). `helperFunctions/srgb2lab.m` /
+`helperFunctions/lab2srgb.m` convert to/from CIELAB (D65, standard
+sRGB↔XYZ↔Lab formulas); `gameNF.m` converts `grey`/`colorC1`/`colorC2` once
+up front and precomputes each flock's own total Lab distance to grey
+(`maxDeltaEC1`, `maxDeltaEC2` — deliberately *not* assumed equal).
+`helperFunctions/computeNfLeafColor.m` then targets the *same* Delta E for
+both flocks at a given reveal state (`nfBaselineDeltaE` at nf ≤ 0, scaling
+up to each flock's own `maxDeltaE` at nf ≥ 1 so both still land exactly on
+their true saturated color), converting back to sRGB for `Screen`.
 
 **Data source — `nf.txt`.** An external real-time acquisition process
 (`RT_acquisition_7`, outside this repo) continuously overwrites
@@ -222,14 +241,19 @@ decided once at trial setup (before the trial's frame loop starts): cue
 `c1` (14Hz) uses column 3 (positive when 14Hz > 18Hz), cue `c2` (18Hz) uses
 column 4 (positive when 18Hz > 14Hz).
 
-**Read cadence vs. visual gating.** `nf.txt` is re-read every
-`nfUpdateIntervalSec` (100ms default) starting at trial start (frame 1) —
-continuing through the response and feedback phases — regardless of trial
-phase. Only the *visual effect* is gated: pre-cue frames always render
-plain `grey` with no NF influence at all (not even the baseline reveal), so
-no cue-consistent information leaks before cue onset. No moving-average
-window is applied to the live NF value, unlike the neurofeedback experiment
-this borrows the `nf.txt` protocol from.
+**Read cadence vs. visual gating.** `nf.txt` is re-read fresh every
+displayed frame, starting at trial start (frame 1) — continuing through the
+response and feedback phases — regardless of trial phase. It is *not* held
+between reads on a fixed local clock: the file is only rewritten externally
+on roughly a 100ms cadence, but reading on our own fixed timer could be out
+of phase with that and add close to a full extra cadence-period of pure
+latency for no reason — reading every frame instead means each external
+rewrite is picked up as soon as it lands. Only the *visual effect* is
+gated: pre-cue frames always render plain `grey` with no NF influence at
+all (not even the baseline reveal), so no cue-consistent information leaks
+before cue onset. No moving-average window is applied to the live NF
+value, unlike the neurofeedback experiment this borrows the `nf.txt`
+protocol from.
 
 **Response window.** `responseTimeoutSec` is 10s (vs. 4s in `gamev1.m`), to
 give the participant more time to work with the NF-driven coloring before
@@ -237,22 +261,26 @@ the window closes.
 
 **CSV output.** In addition to the same per-trial CSV as `gamev1.m`
 (`p<participant>_b<block>_leaves_trialdata.csv`), `gameNF.m` also writes a
-second, per-NF-read trace file,
-`p<participant>_b<block>_leaves_nftrace.csv` (one row per ~100ms `nf.txt`
-read, for the whole trial):
+second, NF trace file, `p<participant>_b<block>_leaves_nftrace.csv`. This is
+sampled only every `nfTraceLogIntervalSec` (~100ms default, `nfTraceLogIntervalFrames`
+in frames) even though `nf.txt` itself is read every frame — logging every
+frame would just repeat the same externally-unchanged value several times
+over for no benefit:
 
 ```
 TrialNumber, FrameNumber, SampleTime, NFIndexUsed, NFValueRaw,
 NFValueClipped, PostCueOnset
 ```
 
-`NFValueRaw` is the raw value read from `nf.txt` (unclipped, can be outside
-`[0, 1]` or even outside `[-1, 1]`); `NFValueClipped` is what actually drove
-the leaf color that frame; `PostCueOnset` (0/1) marks whether that read
-occurred after cue onset (i.e. whether it was actually visible) or during
-the pre-cue phase (read, logged, but not shown). Both of `gameNF.m`'s CSV
-files get the same header-mismatch-safe-fallback behavior as `gamev1.m`'s
-main CSV, via the shared `helperFunctions/ensureCsvWithHeader.m` (`gamev1.m`
+`NFValueRaw` is the raw value read from `nf.txt` at that sampled frame
+(unclipped, can be outside `[0, 1]` or even outside `[-1, 1]`);
+`NFValueClipped` is that value's `[0, 1]` clip (see
+`helperFunctions/computeNfLeafColor.m` for how it maps to a Delta E, and
+then a color); `PostCueOnset` (0/1) marks whether that sample occurred
+after cue onset (i.e. whether it was actually visible) or during the
+pre-cue phase (read, logged, but not shown). Both of `gameNF.m`'s CSV files
+get the same header-mismatch-safe-fallback behavior as `gamev1.m`'s main
+CSV, via the shared `helperFunctions/ensureCsvWithHeader.m` (`gamev1.m`
 itself still does this inline, unchanged).
 
 **Testing without real EEG hardware.** In the experiment room (Windows),
