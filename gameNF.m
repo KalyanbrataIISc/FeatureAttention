@@ -138,7 +138,7 @@ leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier; % extra thic
 minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier;   % minimum center-to-center distance enforced between any two leaves
 leafSpeedPxPerSec     = 200;
 leafLifetimeSec       = 5.0; % how long a single leaf stays on screen before it respawns elsewhere
-numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^2).
+numLeavesPerFlock     = 15;  % density = numLeavesPerFlock / (screen area in px^2).
 % Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
 % field can only physically fit so many before the placement algorithm
 % can no longer find room and starts force-respawning leaves almost every
