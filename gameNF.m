@@ -212,7 +212,7 @@ nfIndexC2           = 4;      % nf.txt column: positive when 18Hz (c2) SSVEP pow
 % looked clearly more intense for one flock's color than the other's,
 % since equal RGB distance is not equal *perceived* distance across
 % different hues. See helperFunctions/computeNfLeafColor.m.
-nfBaselineDeltaE = 1;  % target CIELAB Delta E for the fixed cue-onset reveal - both flocks match exactly
+nfBaselineDeltaE = 0;  % target CIELAB Delta E for the fixed cue-onset reveal - both flocks match exactly
 labGrey = srgb2lab(grey);
 labC1   = srgb2lab(colorC1);
 labC2   = srgb2lab(colorC2);
