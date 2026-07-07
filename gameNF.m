@@ -221,6 +221,17 @@ labC2   = srgb2lab(colorC2);
 maxDeltaEC1 = norm(labC1 - labGrey);  % this flock's total Lab distance from grey to fully-saturated colorC1
 maxDeltaEC2 = norm(labC2 - labGrey);  % ditto for colorC2 - deliberately not assumed equal to maxDeltaEC1
 
+% Precompute the whole nf-value -> color mapping as a lookup table, once,
+% here - not per frame. The CIELAB math in computeNfLeafColor.m (several
+% non-integer power/exponent calls) is heavy enough that running it twice
+% every displayed frame (once per flock) measurably delayed each flip,
+% which drifts the SSVEP tagging frequency and breaks phase-locked power
+% spectral analysis. nf.txt is still read fresh every frame (see the trial
+% loop) - only the color computation itself is precomputed.
+nfLutSize = 1001;  % resolution of the table; steps this fine are visually imperceptible
+nfColorLutC1 = buildNfColorLut(labGrey, labC1, maxDeltaEC1, nfBaselineDeltaE, nfLutSize);
+nfColorLutC2 = buildNfColorLut(labGrey, labC2, maxDeltaEC2, nfBaselineDeltaE, nfLutSize);
+
 %% Initialise the screen
 screens = Screen('Screens');
 screenNumber = max(screens);
@@ -264,6 +275,11 @@ leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
 
 fieldRect = [windowRect(1) + fieldMarginPx, windowRect(2) + fieldMarginPx, ...
              windowRect(3) - fieldMarginPx, windowRect(4) - fieldMarginPx];
+
+% Leaf placement grid geometry, precomputed once here rather than
+% recomputed (via sqrt/floor) on every respawn throughout the whole block
+% of trials - see computeLeafPlacementGrid.m/findValidLeafPosition.m.
+leafPlacementGrid = computeLeafPlacementGrid(fieldRect, minLeafSeparationPx, numLeavesPerFlock * 2);
 
 %% Block Loop
 runBlockLoop = true;
@@ -375,7 +391,7 @@ try
         flock2InnerShape = createLeafShape(c2PointDir, leafLengthPx, leafWidthPx);
         flock2OuterShape = createLeafShape(c2PointDir, leafLengthPx + 2 * leafBorderThicknessPx, leafWidthPx + 2 * leafBorderThicknessPx);
 
-        leaves = initLeaves(numLeavesPerFlock, fieldRect, minLeafSeparationPx, leafLifetimeFrames, flock1Velocity, flock2Velocity);
+        leaves = initLeaves(numLeavesPerFlock, fieldRect, minLeafSeparationPx, leafLifetimeFrames, flock1Velocity, flock2Velocity, leafPlacementGrid);
 
         participantResponse = 'missed';
         reactionTime = NaN;
@@ -440,7 +456,7 @@ try
                 nfTracePostCue(end+1) = ~isPreCue; %#ok<SAGROW>
             end
 
-            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames);
+            leaves = updateLeaves(leaves, fieldRect, minLeafSeparationPx, leafLifetimeFrames, leafPlacementGrid);
             [flock1BorderColor, flock2BorderColor] = computeSsvepBorderColors( ...
                 currentFrame, interFrameInterval, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
 
@@ -450,8 +466,8 @@ try
                     grey, grey, flock1BorderColor, flock2BorderColor);
                 drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
             else
-                flock1FillColor = computeNfLeafColor(labGrey, labC1, maxDeltaEC1, nfCurrentValueRaw, nfBaselineDeltaE);
-                flock2FillColor = computeNfLeafColor(labGrey, labC2, maxDeltaEC2, nfCurrentValueRaw, nfBaselineDeltaE);
+                flock1FillColor = lookupNfColor(nfColorLutC1, nfCurrentValueRaw);
+                flock2FillColor = lookupNfColor(nfColorLutC2, nfCurrentValueRaw);
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     flock1FillColor, flock2FillColor, flock1BorderColor, flock2BorderColor);
                 drawRoundedRect(window, cueColor, cueRect, cueRectCornerRadiusPx);

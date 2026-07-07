@@ -1,9 +1,13 @@
-function leaves = initLeaves(numLeavesPerFlock, fieldRect, minSeparationPx, maxLifeFrames, flock1Velocity, flock2Velocity)
+function leaves = initLeaves(numLeavesPerFlock, fieldRect, minSeparationPx, maxLifeFrames, flock1Velocity, flock2Velocity, grid)
 % initLeaves  Creates the combined leaf state (both flocks) for a new
 % trial. Positions are placed one at a time, each checked against every
 % already-placed leaf (regardless of flock) so no two leaves start closer
 % than minSeparationPx. Lifetimes are staggered uniformly in
 % [1, maxLifeFrames] so leaves don't all respawn in sync.
+%
+% grid is the placement-grid geometry from computeLeafPlacementGrid.m,
+% computed once by the caller (not here) and forwarded to
+% findValidLeafPosition.m.
 
     totalLeaves = numLeavesPerFlock * 2;
     flockID = [ones(numLeavesPerFlock, 1); 2 * ones(numLeavesPerFlock, 1)];
@@ -23,7 +27,7 @@ function leaves = initLeaves(numLeavesPerFlock, fieldRect, minSeparationPx, maxL
         idx = placementOrder(i);
         placedSoFar = placementOrder(1:i-1);
         existingPositions = [x(placedSoFar), y(placedSoFar)];
-        newPosition = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx, totalLeaves);
+        newPosition = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx, grid);
         x(idx) = newPosition(1);
         y(idx) = newPosition(2);
     end

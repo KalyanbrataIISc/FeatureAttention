@@ -1,4 +1,4 @@
-function position = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx, targetLeafCount)
+function position = findValidLeafPosition(fieldRect, existingPositions, minSeparationPx, grid)
 % findValidLeafPosition  Samples a random (x,y) inside fieldRect that is at
 % least minSeparationPx away from every row of existingPositions (an Nx2
 % matrix, may be empty). Falls back to the last sampled candidate if no
@@ -13,29 +13,19 @@ function position = findValidLeafPosition(fieldRect, existingPositions, minSepar
 % rebalancing toward whatever region is currently sparse as leaves drift,
 % so density stays even over time too, not just in the first frame.
 %
-% Grid cells are sized so each holds ~1 leaf on average at targetLeafCount
-% (the actual number of leaves sharing the field - initLeaves.m/
-% updateLeaves.m pass in their current leaf count). A grid finer than that
-% leaves almost every cell permanently at 0 occupancy, which gives the
-% "prefer least-occupied" rule nothing meaningful to differentiate between
-% and makes it behave just like plain uniform-random (measured: with cells
-% pitched at minSeparationPx alone, ~190 cells for 40 leaves, this did NOT
-% reliably beat plain uniform-random across seeds). The grid is never
-% coarser than minSeparationPx though, since cells much bigger than that
-% stop usefully constraining candidates for the distance check below.
+% grid (numCellsX/numCellsY/cellWidth/cellHeight) is precomputed once by
+% computeLeafPlacementGrid.m and passed in rather than recomputed here,
+% since fieldRect/minSeparationPx/leaf count never change mid-experiment
+% and this can run many times per second across a whole block of trials.
 
     maxAttempts = 25;
     fieldLeft = fieldRect(1);
     fieldTop = fieldRect(2);
-    fieldWidth = fieldRect(3) - fieldRect(1);
-    fieldHeight = fieldRect(4) - fieldRect(2);
 
-    idealCellSize = sqrt((fieldWidth * fieldHeight) / max(1, targetLeafCount));
-    cellSize = max(minSeparationPx, idealCellSize);
-    numCellsX = max(1, floor(fieldWidth / cellSize));
-    numCellsY = max(1, floor(fieldHeight / cellSize));
-    cellWidth = fieldWidth / numCellsX;
-    cellHeight = fieldHeight / numCellsY;
+    numCellsX = grid.numCellsX;
+    numCellsY = grid.numCellsY;
+    cellWidth = grid.cellWidth;
+    cellHeight = grid.cellHeight;
 
     occupancy = zeros(numCellsX * numCellsY, 1);
     if ~isempty(existingPositions)
