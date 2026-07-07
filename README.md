@@ -101,7 +101,7 @@ and cleaning up; no CSV row is written for an aborted trial.
 
 Each flock's leaves have a thick border that flickers in luminance between
 `colorBorderLow`/`colorBorderHigh` (default black/white) — flock c1 at
-`freqC1Hz` (14 Hz default), flock c2 at `freqC2Hz` (18 Hz default). The
+`freqC1Hz` (17 Hz default), flock c2 at `freqC2Hz` (20 Hz default). The
 flicker is computed from continuous elapsed time since trial start
 (`helperFunctions/computeSsvepBorderColors.m`), independent of the cue and
 uninterrupted across the pre-cue/response/feedback phases — it only resets
@@ -230,19 +230,23 @@ up to each flock's own `maxDeltaE` at nf ≥ 1 so both still land exactly on
 their true saturated color), converting back to sRGB for `Screen`.
 
 **Data source — `nf.txt`.** An external real-time acquisition process
-(`RT_acquisition_7`, outside this repo) continuously overwrites
-`nf.txt` (in the project root, `nfFilePath` in `gameNF.m`) with a 5-element
-binary double vector: `[AMI_dir1, AMI_dir2, SMI_14gt18, SMI_18gt14,
-sampleCount]`. Only the SMI pair (indices 3/4) is used — the 14Hz-vs-18Hz
-SSVEP power separation. `helperFunctions/readNFValue.m` reads a single
-indexed value from this file (returning `0`, i.e. neutral, if the file is
-missing or caught mid-write by the external process).
+(`RT_files/RT_acquisition_8.m`, run separately from this repo's
+PsychToolbox side) continuously overwrites `nf.txt` (in the project root,
+`nfFilePath` in `gameNF.m`) with a 3-element binary double vector:
+`[SMI_17gt20, SMI_20gt17, sampleCount]` — the 17Hz-vs-20Hz SSVEP power
+separation, computed from all electrodes for both frequencies.
+`helperFunctions/readNFValue.m` reads a single indexed value from this
+file (returning `0`, i.e. neutral, if the file is missing or caught
+mid-write by the external process). (Previously 5 elements, with an
+AMI/alpha-lateralisation pair at indices 1/2 that this task never read —
+that alpha feedback has since been disabled on the acquisition side, so
+the SMI pair moved down to indices 1/2 and `sampleCount` to index 3.)
 
 **Which column, and when it's decided.** Which of the two SMI columns is
 "correct" depends on the trial's cue and never changes mid-trial, so it's
 decided once at trial setup (before the trial's frame loop starts): cue
-`c1` (14Hz) uses column 3 (positive when 14Hz > 18Hz), cue `c2` (18Hz) uses
-column 4 (positive when 18Hz > 14Hz).
+`c1` (17Hz) uses column 1 (positive when 17Hz > 20Hz), cue `c2` (20Hz) uses
+column 2 (positive when 20Hz > 17Hz).
 
 **Read cadence vs. visual gating.** `nf.txt` is re-read fresh every
 displayed frame, starting at trial start (frame 1) — continuing through the
@@ -287,11 +291,11 @@ CSV, via the shared `helperFunctions/ensureCsvWithHeader.m` (`gamev1.m`
 itself still does this inline, unchanged).
 
 **Testing without real EEG hardware.** In the experiment room (Windows),
-`RT_acquisition_7` (outside this repo) is the real writer of `nf.txt`. For
+`RT_files/RT_acquisition_8.m` is the real writer of `nf.txt`. For
 local/mac testing, [`simulate_nf.py`](simulate_nf.py) writes randomized
-values into `nf.txt` in the same 5-double binary format, at the same
-~101.6ms cadence RT_acquisition_7 uses (13 samples at its 128Hz EEG rate) -
-each of the 5 values does its own bounded random walk rather than jumping
+values into `nf.txt` in the same 3-double binary format, at the same
+~101.6ms cadence RT_acquisition_8.m uses (13 samples at its 128Hz EEG rate) -
+each of the 3 values does its own bounded random walk rather than jumping
 independently every write, so the leaf-color modulation in `gameNF.m`
 responds the way it would to a real, smoothly-drifting SSVEP signal. Run
 `python3 simulate_nf.py --path nf.txt` (from the repo root) alongside

@@ -1,8 +1,8 @@
 function [nfVal, readOk] = readNFValue(pathToNF, nfIndex)
 % readNFValue  Reads the nfIndex-th double from the binary NF file written
-% externally by the real-time SSVEP acquisition process (RT_acquisition_7),
-% which fwrites a 5-element double vector [AMI_dir1, AMI_dir2, SMI_14gt18,
-% SMI_18gt14, sampleCount] roughly every 100 ms via fopen(...,'w') -
+% externally by the real-time SSVEP acquisition process (RT_acquisition_8),
+% which fwrites a 3-element double vector [SMI_17gt20, SMI_20gt17,
+% sampleCount] roughly every 100 ms via fopen(...,'w') -
 % truncating the file to empty before writing the fresh bytes - then
 % fwrite then fclose. Same lean fopen/fread/fclose read
 % testing2DGoalField.m uses every frame, with no separate exist() check

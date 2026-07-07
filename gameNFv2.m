@@ -200,23 +200,27 @@ freqC2Hz = 20;
 % flock's true color so the participant can tell the two flocks apart and
 % knows where to start attending, rather than waiting on their own
 % not-yet-achieved correct lateralisation to reveal it. This is driven
-% purely off nf.txt (written externally by RT_acquisition_7) - no
+% purely off nf.txt (written externally by RT_acquisition_8) - no
 % moving-average window is applied here, unlike that prior experiment.
 % nf.txt is re-read fresh every displayed frame (not held between reads),
 % since it's only the file's own external rewrite that happens on a ~100ms
 % cadence - reading on our own fixed 100ms clock could be out of phase with
 % that and add up to ~100ms of pure latency for no reason.
 %
-% nf.txt is a 5-element double vector [AMI_dir1, AMI_dir2, SMI_14gt18,
-% SMI_18gt14, sampleCount]; only the SMI pair (indices 3/4) is used, since
-% that is the 14Hz-vs-18Hz SSVEP power separation this task's NF reflects.
-% Which of the two columns is "correct" for a trial depends on that
+% nf.txt is a 3-element double vector [SMI_17gt20, SMI_20gt17,
+% sampleCount] - the 17Hz-vs-20Hz SSVEP power separation this task's NF
+% reflects, now computed from all electrodes for both frequencies (see
+% RT_acquisition_8.m). Previously 5 elements with an AMI/alpha
+% lateralisation pair at indices 1/2 - that alpha-based feedback was never
+% read here and has since been dropped on the acquisition side, so the SMI
+% pair shifted down to indices 1/2 and sampleCount to index 3.
+% Which of the two SMI columns is "correct" for a trial depends on that
 % trial's cue and is fixed once at trial setup (before the trial's frame
 % loop starts), since the cue itself never changes mid-trial.
 nfFilePath          = fullfile(experimentRoot, 'nf.txt');
 nfTraceLogIntervalSec = 0.100;  % NF trace CSV is still logged only this often (not every frame) to keep the file a sane size
-nfIndexC1           = 3;      % nf.txt column: positive when 14Hz (c1) SSVEP power exceeds 18Hz
-nfIndexC2           = 4;      % nf.txt column: positive when 18Hz (c2) SSVEP power exceeds 14Hz
+nfIndexC1           = 1;      % nf.txt column: positive when 17Hz (c1) SSVEP power exceeds 20Hz
+nfIndexC2           = 2;      % nf.txt column: positive when 20Hz (c2) SSVEP power exceeds 17Hz
 
 % The fixed cue-onset reveal (and the live-NF reveal growth on top of it)
 % is calibrated in CIELAB Delta E - perceived color difference - rather
@@ -369,7 +373,7 @@ try
         % trial - predetermined here, before the trial's frame loop starts).
         % nfCurrentValueRaw only ever updates on a successful read (see the
         % frame loop below) - starts at 0 (neutral) same as a real trial
-        % start, since RT_acquisition_7 itself zeroes nf.txt at trial start.
+        % start, since RT_acquisition_8 itself zeroes nf.txt at trial start.
         nfCurrentValueRaw = 0;
         nfTraceFrameNumber = [];
         nfTraceSampleTime = [];
