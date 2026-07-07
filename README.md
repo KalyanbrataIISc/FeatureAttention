@@ -145,6 +145,9 @@ ResponseTimeout, TrialEnd
   → cleanup).
 - `gameNF.m` — the neurofeedback variant of the same script; see
   [Neurofeedback variant](#neurofeedback-variant-gamenfm) above.
+- `gameNFv2.m` — a further, independent copy of `gameNF.m` with a
+  timing-robustness fix for the SSVEP flicker; see
+  [Timing-hardened variant](#timing-hardened-variant-gamenfv2m) below.
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
@@ -295,8 +298,65 @@ responds the way it would to a real, smoothly-drifting SSVEP signal. Run
 `gameNF.m` to exercise the NF path without hardware; it does not know about
 trial boundaries and just free-runs continuously.
 
+## Timing-hardened variant (`gameNFv2.m`)
+
+`gameNFv2.m` is a further, independent copy of `gameNF.m` — identical in every
+respect above except for how the SSVEP flicker's timing is generated. It
+exists to fix a specific failure mode: under GPU load (e.g. a rig with heavy
+concurrent rendering/processing), `Screen('Flip')` can miss its requested
+vsync and present a frame late. In `gamev1.m`/`gameNF.m`, the flicker's phase
+is `(currentFrame - 1) * interFrameInterval` — a loop counter times a fixed
+*nominal* refresh interval (`helperFunctions/computeSsvepBorderColors.m`).
+That counter has no feedback from real elapsed time: every dropped frame
+makes the code's phase clock fall further behind the wall clock, and the
+error only accumulates for the rest of the trial. In practice this shows up
+as the flicker's *measured* frequency drifting visibly below its nominal
+value (e.g. 17 Hz reading as ~16.6 Hz, 20 Hz as ~19.5 Hz) by an amount that
+tracks how much load the GPU is under - which will degrade SSVEP phase
+locking and power in any later analysis.
+
+**Fix - real-time-anchored phase.** `gameNFv2.m` computes the flicker phase
+from the *actual measured* `Screen('Flip')` VBL timestamp each frame, not
+from the frame counter (`helperFunctions/computeSsvepColorsFromTime.m`). Each
+frame predicts its own display time as `lastRealVbl + interFrameInterval`,
+where `lastRealVbl` is the true timestamp `Screen('Flip')` returned for the
+previous frame. If that previous flip was delayed, the prediction - and thus
+the phase - shifts to match reality on the very next frame, so a dropped
+frame costs at most one bounded, local phase correction instead of a
+permanent, growing frequency error. `trialSsvepT0` (the real flip timestamp
+right before each trial's frame loop starts) is the trial's `t = 0` reference,
+matching the original's per-trial phase reset.
+
+**Fix - dropped-frame detection and logging.** `gameNFv2.m` also captures
+`Screen('Flip')`'s `missed` output every frame (unused/discarded in
+`gamev1.m`/`gameNF.m`) and logs every frame that missed its deadline, so GPU
+overload is a measurable, quantifiable thing rather than only inferred after
+the fact from EEG spectra. This is only tracked on `~ismac` (the real rig),
+since mac dev/test runs have `SkipSyncTests` enabled and unreliable flip
+timing to begin with.
+
+**CSV output differences from `gameNF.m`.** The main per-trial CSV gets one
+extra trailing column, `DroppedFrameCount` (count of frames in that trial
+that missed their flip deadline):
+
+```
+TrialNumber, TrialStart, C1PointDir, C1MoveDir, C2PointDir, C2MoveDir, Cue,
+CueOnsetTime, CorrectResponse, ParticipantResponse, Accuracy, ReactionTime,
+ResponseTimeout, TrialEnd, DroppedFrameCount
+```
+
+A third CSV, `p<participant>_b<block>_leaves_droppedframes.csv`, logs one row
+per dropped/delayed frame (typically empty or near-empty on a healthy rig):
+
+```
+TrialNumber, FrameNumber, VBLTime, MissedBySec
+```
+
+`MissedBySec` is `Screen('Flip')`'s own estimate (seconds) of how far past
+its requested deadline the flip actually landed.
+
 ---
-**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m` (or their
+**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m`, `gameNFv2.m` (or their
 helper functions) changes in a way that affects behavior, parameters,
 timing, triggers, or CSV columns, update this README to match in the same
 change. See `CLAUDE.md`.
