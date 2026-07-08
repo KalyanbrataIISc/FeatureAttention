@@ -720,3 +720,11 @@ while waitForEscape
 end
 
 cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+
+%% Trigger values sent by this task
+% Values are defined in functions/cog_send_triggers.m.
+% reset      -> 0
+% trialstart -> 20
+% cueonset   -> 45
+% response   -> 40
+% trialstop  -> 30
