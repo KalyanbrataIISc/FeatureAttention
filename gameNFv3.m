@@ -223,10 +223,10 @@ instructionsTextSize = 25;
 % Colors
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
 colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
-SSVEPContrastGap = 150;
-shiftValue = round((255 - 100)/2);
-colorBorderLow  = black + shiftValue;  % SSVEP flicker low-luminance border color
-colorBorderHigh = white - shiftValue;  % SSVEP flicker high-luminance border color
+% SSVEPContrastGap = 150;
+% shiftValue = round((255 - 100)/2);
+colorBorderLow  = black;  % SSVEP flicker low-luminance border color
+colorBorderHigh = round(white/2);  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
 freqC1Hz = 17;
