@@ -234,7 +234,10 @@ their true saturated color), converting back to sRGB for `Screen`.
 PsychToolbox side) continuously overwrites `nf.txt` (in the project root,
 `nfFilePath` in `gameNF.m`) with a 3-element binary double vector:
 `[SMI_17gt20, SMI_20gt17, sampleCount]` — the 17Hz-vs-20Hz SSVEP power
-separation, computed from all electrodes for both frequencies.
+separation, computed from the pooled 28-electrode SSVEP ROI for both
+frequencies. In the 41-channel GDF EEG order (`A1-A32+B1-B9`), that ROI is
+the 14 right-electrode indices `[28 30 32 36 38 35 37 39 40 41 26 27 29 31]`
+plus the 14 left-electrode indices `[15 17 5 7 9 6 8 10 11 12 13 14 16 18]`.
 `helperFunctions/readNFValue.m` reads a single indexed value from this
 file (returning `0`, i.e. neutral, if the file is missing or caught
 mid-write by the external process). (Previously 5 elements, with an

@@ -30,13 +30,13 @@ clc;
 %   4) For each matched trial, locates that trial's own cue-onset trigger
 %      and (if a response was given - a timeout has none) response trigger
 %      (helperFunctions/findEventSample.m), computes a sliding-window
-%      log-SNR time series at 17Hz and 20Hz over an occipital ROI (Chronux
-%      multitaper), and baseline-corrects it against every window before
-%      that trial's own cue onset (its whole pre-cue period - see
-%      helperFunctions/baselineCorrectSeries.m). That single
-%      baseline-corrected series is then time-locked to cue onset
+%      adjacent-bin-normalized raw log-power time series (log-SNR) at 17Hz
+%      and 20Hz over the same 28 SSVEP electrodes used by
+%      RT_files/RT_acquisition_8.m (Chronux multitaper). Each raw trial
+%      series is then time-locked to cue onset
 %      (helperFunctions/alignSeriesToEvent.m), with NaN-padding on
-%      whichever side a given trial doesn't reach. Valid response triggers
+%      whichever side a given trial doesn't reach; only the final averaged
+%      trace is zeroed to its own cue-onset value. Valid response triggers
 %      are plotted as one dot per trial at their response time relative to
 %      cue onset.
 %   5) Averages across matched trials, split by cue (c1 vs c2 - see "What
@@ -76,13 +76,15 @@ clc;
 % 41-channel subset (analysis/singleParticipantBehaviourOffline.m's
 % settings.channels=41 is precisely "the first 41 non-STATUS channels in
 % GDF file order", i.e. A1-A32+B1-B9). Everything in this script - reading,
-% filtering, bad-channel detection/repair, re-referencing, occipital ROI
+% filtering, bad-channel detection/repair, re-referencing, SSVEP ROI
 % selection, and the evoked/ongoing spectra - operates within this same
-% 41-channel scope (not the full 128-channel cap). B1 and B2 are further
-% manually excluded (leaving 39 channels) from the evoked/ongoing spectra
-% specifically, for participants 58 and 59 specifically - adjust
-% manuallyExcludedSpectraChannels below if that stops being true for later
-% participants.
+% 41-channel scope (not the full 128-channel cap). The cue-locked SSVEP
+% series uses the 14 right + 14 left SSVEP electrode pairs from
+% RT_files/RT_acquisition_8.m, pooled together for both frequencies. B1 and
+% B2 are further manually excluded (leaving 39 channels) from the
+% evoked/ongoing spectra specifically, for participants 58 and 59
+% specifically - adjust manuallyExcludedSpectraChannels below if that stops
+% being true for later participants.
 % -------------------------------------------------------------------------
 
 %% Inputs
@@ -109,7 +111,14 @@ desiredTargetFs = 256;   % actual achieved rate snaps to an exact integer decima
 prepBand        = [1 45];
 prepBandOrd     = 4;
 useNotch50      = true;
-occipitalRoiSize = 14;
+
+% SSVEP ROI channel indices in the 41-channel GDF EEG order (A1-A32+B1-B9),
+% matching RT_files/RT_acquisition_8.m's pnqL1S/pnqL2S. Both tagging
+% frequencies are read from the pooled 28-electrode set, not frequency by
+% hemisphere.
+ssvepRightChannelIdx = [28 30 32 36 38 35 37 39 40 41 26 27 29 31];
+ssvepLeftChannelIdx  = [15 17 5 7 9 6 8 10 11 12 13 14 16 18];
+ssvepRoiChannelIdx   = [ssvepRightChannelIdx, ssvepLeftChannelIdx];
 
 % Optional manual bad-channel overrides per participant, unioned with the
 % automatic detector (see helperFunctions/repairBadChannelsSpline.m).
@@ -160,6 +169,11 @@ initializeGdfAnalysisToolboxes();
 
 scalpLabels = [arrayfun(@(n) sprintf('A%d', n), 1:32, 'UniformOutput', false), ...
                arrayfun(@(n) sprintf('B%d', n), 1:9, 'UniformOutput', false)].';
+if any(ssvepRoiChannelIdx < 1 | ssvepRoiChannelIdx > numel(scalpLabels))
+    error('ssvepCueOnsetLocked:ssvepRoiIndexOutOfRange', ...
+        'SSVEP ROI indices must be within the %d-channel scalp label list.', numel(scalpLabels));
+end
+ssvepRoiLabels = scalpLabels(ssvepRoiChannelIdx);
 spectraChannelLabels = setdiff(scalpLabels, manuallyExcludedSpectraChannels, 'stable');
 
 chronuxParams = struct( ...
@@ -241,9 +255,13 @@ for participantIdx = 1:numel(participantNums)
     referencedData = ft_preprocessing(cfgRef, repairedData);
     clear repairedData;
 
-    roiLabels = selectPosteriorChannels(sfpFile, referencedData.label, occipitalRoiSize);
-    fprintf('  Occipital ROI (%d channels): %s\n', numel(roiLabels), strjoin(roiLabels, ', '));
-    roiMask = ismember(referencedData.label, roiLabels);
+    roiMask = ismember(referencedData.label, ssvepRoiLabels);
+    if nnz(roiMask) ~= numel(ssvepRoiLabels)
+        error('ssvepCueOnsetLocked:ssvepRoiChannelsMissing', ...
+            'Only %d of the %d requested SSVEP ROI channels were found in participant %d''s data.', ...
+            nnz(roiMask), numel(ssvepRoiLabels), participantNum);
+    end
+    fprintf('  SSVEP ROI (%d channels): %s\n', numel(ssvepRoiLabels), strjoin(ssvepRoiLabels, ', '));
     roiSignal = mean(referencedData.trial{1}(roiMask, :), 1);
 
     spectraMask = ismember(referencedData.label, spectraChannelLabels);
@@ -304,8 +322,6 @@ for participantIdx = 1:numel(participantNums)
                 participantNum, matched.Block(rowIdx), matched.TrialNumber(rowIdx), spectrumWindowSec);
             continue;
         end
-
-        seriesMat = baselineCorrectSeries(seriesMat, windowCenterTimesSec, cueOnsetRelSec);
 
         thisTrial = struct( ...
             'participant', participantNum, ...

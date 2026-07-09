@@ -1,11 +1,11 @@
 function plotSsvepMeanSem(timeAxisSec, meanMat, semMat, freqLabels, lineColors, titleStr, subtitleStr, xLabelStr, ...
     figureName, markerTimesSec)
-% plotSsvepMeanSem  Plots one or more event-locked, baseline-corrected
-% log-SNR time series (mean +/- shaded SEM) on a new figure, in the style of
-% analysis/singleParticipantBehaviourOffline.m's plotMeanSem: a shaded
-% SEM band (fill, low alpha, no legend entry) behind a mean line (legend
-% entry), one pair per row of meanMat/semMat. Each series also gets its own
-% line style (solid, dashed, ...), not just its own color - the task's own
+% plotSsvepMeanSem  Plots one or more event-locked log-SNR time series
+% (mean +/- shaded SEM) on a new figure, in the style of
+% analysis/singleParticipantBehaviourOffline.m's plotMeanSem: a shaded SEM
+% band (fill, low alpha, no legend entry) behind a mean line (legend entry),
+% one pair per row of meanMat/semMat. Each series also gets its own line
+% style (solid, dashed, ...), not just its own color - the task's own
 % saturated stimulus colors (reused here so the plot ties back to
 % colorC1/colorC2 in gameNFv3.m) read at fairly low contrast against a white
 % figure background, so identity should not rest on color alone. A dashed
@@ -70,7 +70,7 @@ function plotSsvepMeanSem(timeAxisSec, meanMat, semMat, freqLabels, lineColors, 
             'Color', [0.1 0.1 0.1], 'MarkerSize', 10, 'HandleVisibility', 'off');
     end
     xlabel(xLabelStr);
-    ylabel('Log SNR (baseline-corrected to trial''s pre-cue period)');
+    ylabel('Log SNR (mean trace zeroed at locking event)');
     xlim([timeAxisSec(1), timeAxisSec(end)]);
     legend('Location', 'best');
     title(titleStr);

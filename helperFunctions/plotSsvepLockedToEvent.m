@@ -2,8 +2,10 @@ function plotSsvepLockedToEvent(trials, eventFieldName, stepSec, maxPreEventSec,
     cueCodes, cueTitles, freqLabels, freqColors, eventLabel, resultsDir, saveFigures, fileTagPrefix, markerEventFieldName)
 % plotSsvepLockedToEvent  Computes a shared event-locked timeline from
 % trials.(eventFieldName), splits trials by cue, aligns each trial's
-% already-baseline-corrected series to that event (alignSeriesToEvent.m),
-% averages, and plots/saves one figure per cue.
+% raw series to that event (alignSeriesToEvent.m), averages, zeroes the
+% final mean trace to its value at the event time, and plots/saves one
+% figure per cue. The trial stack and SEM remain based on the unzeroed raw
+% aligned values.
 %
 % Trials whose trials.(eventFieldName) is NaN (e.g. a timeout trial has no
 % response to lock to) are silently excluded from this event's plots -
@@ -95,6 +97,8 @@ function plotSsvepLockedToEvent(trials, eventFieldName, stepSec, maxPreEventSec,
             meanMat(f, :) = mean(stacked(:, :, f), 1, 'omitnan');
             semMat(f, :) = computeSemOmitNan(stacked(:, :, f));
         end
+        zeroIdx = find(timeAxisSec == 0, 1);
+        meanMat = bsxfun(@minus, meanMat, meanMat(:, zeroIdx));
 
         participantCounts = unique([cueTrials.participant]);
         subtitleStr = sprintf('n = %d trials across %d participant(s) (P%s)', ...
