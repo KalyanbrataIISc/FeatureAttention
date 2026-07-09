@@ -24,3 +24,17 @@ The values in the nf.txt are measures of SSVEP laterlisation i.e. the separation
 But to determine which direction of lateralisation nf we should take (whether 14hz or 18hz should increase) we need to predetermine the cure before trial loop starts. Even though have the nf stream start from trial start and updates every 100ms, we will show the modulation only after cue start. And to give them a little more time, make the response time 10s from 4s.
 Please take this seriously, as this is a very important real cognitive science experiment and everything should be tightly controlled. As we will be using old version of matlab where you cannot have helper function on the same file, use the helperFunction folder to create in any. You don’t have to run the MATLAB yourself. I’ll check it manually.
 God speed brother.
+
+---
+
+I have collected the first 2 participants data for gameNFv3. You can find it in /Volumes/250GBKC/FAData. There you will find /Volumes/250GBKC/FAData/P58 and /Volumes/250GBKC/FAData/P59. Under each you will find data like this: (example for p58)
+[text](../../../../../Volumes/250GBKC/FAData/P58/GDF) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b01_leaves_droppedframes.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b01_leaves_nftrace.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b01_leaves_trialdata.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b02_leaves_droppedframes.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b02_leaves_nftrace.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b02_leaves_trialdata.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b03_leaves_droppedframes.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b03_leaves_nftrace.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/p58_b03_leaves_trialdata.csv) [text](../../../../../Volumes/250GBKC/FAData/P58/RT_S58)
+
+Don't have to look at the RT_S.. folder for now. Use the csv files and the gdf data. The GDF folder has like this:
+/Volumes/250GBKC/FAData/P58/GDF/P58.gdf
+
+Your task will be do write the full analysis code! To get a hint how to start, I have put an example analysis code used in some other EEG experiment data in the analysis folder here. Here is the plots we need to see:
+SSVEP time series locked to trial end. Similar to what it is doing in the example code. Use the same preprocessing. Two plots actually, one for c1 cues (mention what that means), another for c2 cue. Each plot will have both 17hz and 20hz lines, and we will base line it for the 1st second. If I am missing something that you think is needed to be done, I am open to suggestions.
+Do not write anything in the FAData, just read from there.
+Please take this seriously, as this is a very important real cognitive science experiment and everything should be tightly controlled. As we will be using old version of matlab where you cannot have helper function on the same file, use the helperFunction folder to create in any. You don’t have to run the MATLAB yourself. I’ll check it manually.
+God speed brother.
