@@ -38,3 +38,14 @@ SSVEP time series locked to trial end. Similar to what it is doing in the exampl
 Do not write anything in the FAData, just read from there.
 Please take this seriously, as this is a very important real cognitive science experiment and everything should be tightly controlled. As we will be using old version of matlab where you cannot have helper function on the same file, use the helperFunction folder to create in any. You don’t have to run the MATLAB yourself. I’ll check it manually.
 God speed brother.
+
+---
+
+Now we will design a new game: gameBreakout (do not change anything in the old games) which will use the same nf.txt to read the similar neurofeedback. This time the there will be a large rectangular paddle at the bottom of the screen. On its left side we will have a region of grating which flickers at 17hz and on right side the similar region flickers at 20hz sinusoidally to create SSVEP. In between there is an area which is not flickering. The paddle will move left or right, based on the corresponding NF, if 17hz increases moves left and if 20hz increases move right. The speed is linear with NF values. There will be a ball, which will bounce arround and should not fall (paddle saves it from falling). There will be randomly generated bricks in the space above the midline of the screen. Participants have to break each brick, by bouncing the ball. Physics will have no gravity, but corect collision mechanics with ball spin into account.
+Trial will start at ball spawn with trial start trigger. Trial will end with trial end trigger at ball falling down. First brick, and next bricks after a break will not generate untill the ball have bounced once from the paddle. Also have triggers at every wall bounce, paddle bounce and brick bounce.
+Helper function specific to this game should use separate folder.
+The coding and style remains same as other games here like saving data every 100ms in csv, etc.
+In the code, after the initialisation setup, there will be a parameter section, where as experimenter, we can set all the values of all variables.
+Please take this seriously, as this is a very important real cognitive science experiment and everything should be tightly controlled. As we will be using old version of matlab where you cannot have helper function on the same file. You don’t have to run the MATLAB yourself. I’ll check it manually.
+For now do not worry about it's analysis file or anything. Just make the game file and it's helper functions in its separate folder. I have already made an empty file and folder for you to work on. We will be using the same RT files and nf file. So please don't change anything else.
+God speed brother!

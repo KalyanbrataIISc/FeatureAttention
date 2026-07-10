@@ -148,6 +148,9 @@ ResponseTimeout, TrialEnd
 - `gameNFv2.m` — a further, independent copy of `gameNF.m` with a
   timing-robustness fix for the SSVEP flicker; see
   [Timing-hardened variant](#timing-hardened-variant-gamenfv2m) below.
+- `gameBreakout.m` — a different task entirely (SSVEP-neurofeedback Breakout),
+  sharing only `nf.txt` and the scaffolding; see
+  [Breakout task](#breakout-task-gamebreakoutm) below.
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
@@ -156,6 +159,8 @@ ResponseTimeout, TrialEnd
   conversion, CSV header-mismatch-safe file creation). New helper functions
   belong here, one function per file — this MATLAB version doesn't support
   local functions inside a script.
+- `breakoutHelperFunctions/` — the same, but for `gameBreakout.m` only (ball
+  physics, collisions, brick spawning, paddle NF control, grating drawing).
 - `nf.txt` — binary NF data file in the project root, continuously
   overwritten by the external real-time acquisition process; read (not
   written) by `gameNF.m`.
@@ -362,8 +367,143 @@ TrialNumber, FrameNumber, VBLTime, MissedBySec
 `MissedBySec` is `Screen('Flip')`'s own estimate (seconds) of how far past
 its requested deadline the flip actually landed.
 
+## Breakout task (`gameBreakout.m`)
+
+`gameBreakout.m` is **not** a variant of the leaves task. It is a separate
+SSVEP-neurofeedback experiment that happens to share `nf.txt`, the
+Cedrus/trigger/eye-tracking scaffolding in `functions/`, and a handful of
+generic helpers (`ensureCsvWithHeader`, `sendNumericTrigger`, `checkEscape`,
+`cleanupExperiment`, `getElapsedTime`). It changes nothing in the leaves
+scripts or their helpers. Its own logic lives in `breakoutHelperFunctions/`,
+one function per file.
+
+**The paddle is the stimulus and the effector.** A wide paddle sits near the
+bottom of the screen, split across its width into three regions: a grating
+flickering at `gratingLeftFreqHz` (17 Hz) on the left, a **non-flickering**
+strip in the middle, and a grating at `gratingRightFreqHz` (20 Hz) on the
+right. Those two gratings are the entire SSVEP stimulus. Their flicker is an
+on-off sinusoidal contrast envelope — at the peak of each cycle the bars sit at
+full black/white contrast, at the trough both collapse to a uniform grey and
+the pattern vanishes — so the flicker fundamental is exactly the nominal
+frequency (`breakoutHelperFunctions/computeGratingColors.m`). A
+contrast-*reversing* grating was deliberately not used: its dominant response
+would land at 2f, not at the 17/20 Hz bins the acquisition and the control law
+are built around.
+
+**Paddle motion is the neurofeedback.** `nf.txt` is read fresh every displayed
+frame (`breakoutHelperFunctions/readNfPair.m`, which reads both columns in one
+`fopen`, unlike the leaves task's one-column `readNFValue.m`). 17 Hz dominance
+drives the paddle left, 20 Hz dominance drives it right, at a speed **linear**
+in `nf20 - nf17`, clamped to `paddleMaxSpeedPxPerSec`, with a `paddleNfDeadzone`
+that pins near-neutral lateralisation to a standstill
+(`computePaddleVelocityFromNf.m`). So attending to one side of the paddle
+steers the paddle to that side. A failed read (file caught mid-write) holds the
+last good values rather than snapping the paddle to a halt.
+
+**Physics: no gravity, constant speed, real spin.** Ball speed is renormalized
+to `ballSpeedPxPerSec` every frame, so nothing — not spin, not the paddle —
+ever changes *how fast* the ball moves, only where it goes. A paddle bounce has
+three ingredients (`collideBallPaddle.m`): where on the paddle the ball lands
+sets the rebound angle from vertical (up to `paddleBounceMaxAngleDeg`); the
+paddle's own sideways motion drags the ball along with it (`paddlePushGain`);
+and that same motion sets the ball's **spin** (`paddleSpinGain`), which then
+curves the ball's later flight via a Magnus term (`magnusGainPerFrame` in
+`moveBall.m`) before decaying (`spinDecayPerFrame`). Walls and bricks are
+frictionless mirrors — only the paddle imparts spin, so the one coupling of
+interest (NF → paddle → ball) is never contaminated by incidental contacts.
+`minVerticalSpeedFraction` floors `|vy|` so repeated curvature can't settle the
+ball into a purely horizontal path that neither falls nor reaches the paddle.
+
+**One brick at a time, gated by paddle bounces.** A brick appears at a random
+position in the band above the screen midline, and one contact breaks it. The
+**first** brick, and every brick after one is broken, only spawns once the ball
+has bounced off the paddle *again* — a paddle bounce arms the spawn, breaking a
+brick disarms it. So the participant must keep working the paddle (i.e. keep
+driving the lateralisation) between targets. A new brick is rejection-sampled
+away from the ball's current position (`brickSpawnBallClearancePx`) so it never
+materialises on top of it.
+
+**Trial timeline.** Each trial is one ball, spawn to fall.
+
+1. **Get ready** (`preSpawnDelaySec`) — no ball, no trigger, no logging, but
+   the gratings already flicker and the paddle already tracks NF, so the SSVEP
+   response has settled by the time the trial starts. Prefer whole seconds
+   here: 17 and 20 Hz both complete a whole number of cycles per second, so the
+   flicker is back at zero phase exactly at ball spawn.
+2. **Ball spawn = trial start** — trigger `trialstart`, ball launched upward
+   from the paddle at a random angle within `±ballLaunchMaxAngleDeg`.
+3. **Rally** — triggers on every wall bounce, paddle bounce and brick bounce.
+4. **Trial end** — trigger `trialstop` when the ball has fully cleared the open
+   bottom edge (or at the `maxTrialDurationSec` safety cap). Then a blank
+   `itiDurationSec`, gratings off.
+
+The flicker's phase is one continuous time base spanning the get-ready phase
+and the trial. It is deliberately **not** re-anchored at ball spawn: the
+gratings are on screen across that boundary, so resetting the phase there would
+step the sinusoid discontinuously and evoke a transient at exactly the
+`trialstart` trigger. As in `gameNFv2.m`, that phase is computed from measured
+`Screen('Flip')` VBL timestamps rather than a frame counter, so a dropped frame
+costs one bounded phase correction instead of permanently detuning 17/20 Hz.
+
+**Triggers.** Sent as raw bytes via `helperFunctions/sendNumericTrigger.m`, with
+the values set in the `%% PARAMETERS` block, so this task can define its own
+bounce triggers without touching the shared trigger table in
+`functions/cog_send_triggers.m` that the leaves task depends on.
+`trialstart`/`trialstop` keep that table's values so existing trial
+segmentation still finds them:
+
+```
+trialstart 20   trialstop 30   wallbounce 70   paddlebounce 71   brickbounce 72
+```
+
+Every trigger is sent immediately **after** the `Screen('Flip')` that displays
+the event it marks, never before — so a bounce trigger lands on the refresh
+that actually showed the ball rebounding, not up to one frame early.
+
+**Setup validation.** The parameter block is checked once against the geometry
+it produces, and the script tears down and errors rather than running a block
+with a silently wrong stimulus: the gratings must leave an inert middle strip,
+the paddle must fit the field, the brick must fit its region, and the ball's
+per-frame step must stay below the point at which it would tunnel through the
+paddle (`paddleHeightPx + ballRadiusPx`) or through a brick
+(`min(brickWidthPx, brickHeightPx) + 2*ballRadiusPx`). Collisions are resolved
+at discrete frame positions, so those two bounds are real; both hold with a
+wide margin at the default `ballSpeedPxPerSec`.
+
+**CSV output.** Three files in `data/`, all with the same
+header-mismatch-safe-fallback behavior as the leaves task's. One row per trial
+in `p<participant>_b<block>_breakout_trialdata.csv`:
+
+```
+TrialNumber, TrialStart, TrialEnd, TrialDuration, PaddleBounces, WallBounces,
+BricksBroken, BallFell, DroppedFrameCount
+```
+
+`BallFell` is 0 for a trial that ended on the `maxTrialDurationSec` cap instead
+of the ball falling. A `~100ms` trace of the whole game state (sampled every
+`traceLogIntervalSec`, since `nf.txt` is only rewritten externally on about
+that cadence) in `p<participant>_b<block>_breakout_trace.csv`:
+
+```
+TrialNumber, FrameNumber, SampleTime, NF17, NF20, NFSigned, NFReadOk,
+PaddleCenterX, PaddleVxPxPerSec, BallX, BallY, BallVxPxPerSec, BallVyPxPerSec,
+BallSpin, BrickActive, BrickCenterX, BrickCenterY, BricksBroken
+```
+
+`NFReadOk` is 0 on a frame whose `nf.txt` read lost the race with the external
+writer (the NF values on that row are the last good ones, held). `BrickCenterX`
+/`BrickCenterY` are `NaN` while no brick is on screen. And one row per
+dropped/delayed frame in `p<participant>_b<block>_breakout_droppedframes.csv`,
+same shape as `gameNFv2.m`'s.
+
+**Running it.** Same as the leaves task. On mac, `allowKeyboardPaddleOnMac`
+(default true) lets the arrow keys override the NF drive frame-by-frame, so the
+physics can be exercised without a live NF stream; on the real rig the paddle
+is always NF-driven. Otherwise run `python3 simulate_nf.py --path nf.txt`
+alongside it, exactly as for `gameNF*.m`.
+
 ---
-**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m`, `gameNFv2.m` (or their
-helper functions) changes in a way that affects behavior, parameters,
-timing, triggers, or CSV columns, update this README to match in the same
-change. See `CLAUDE.md`.
+**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m`, `gameNFv2.m`,
+`gameBreakout.m` (or their helper functions) changes in a way that affects
+behavior, parameters, timing, triggers, or CSV columns, update this README to
+match in the same change. See `CLAUDE.md`.
