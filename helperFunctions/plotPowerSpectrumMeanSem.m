@@ -3,7 +3,7 @@ function plotPowerSpectrumMeanSem(freqAxis, meanSpectrum, semSpectrum, markFreqs
 % plotPowerSpectrumMeanSem  Plots a channel-mean power spectrum (mean +/-
 % shaded SEM across channels) on a new figure, with vertical reference
 % lines at markFreqsHz (the SSVEP tagging frequencies) in their
-% corresponding markColors/markLabels, so the 17Hz/20Hz peaks are easy to
+% corresponding markColors/markLabels, so the 23Hz/29Hz peaks are easy to
 % spot directly on the spectrum.
 %
 %   freqAxis: 1 x numFreqBins (Hz).

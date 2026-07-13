@@ -4,6 +4,7 @@ global run;
 run=true;
 channels = 41;             %set to the same value as in Actiview "Channels sent by TCP"
 Fs = 128;
+SSVEP_freq = [23 29];
 trial_on = false;
 
 subject_no = 9988;
@@ -50,7 +51,7 @@ pnqL2 = [15 17 5 7 9];          % Left Electrodes
 
 pnqL1S = [28 30 32 36 38 35 37 39 40 41 26 27 29 31]; % All right Electrodes for SSVEP
 pnqL2S = [15 17 5 7 9 6 8 10 11 12 13 14 16 18]; % All left Electrodes for SSVEP
-pnqAllS = [pnqL1S, pnqL2S]; % Both SSVEP frequencies (17Hz/20Hz) are now read off ALL electrodes together, rather than 17Hz-from-right-only vs 20Hz-from-left-only.
+pnqAllS = [pnqL1S, pnqL2S]; % Both SSVEP frequencies (23Hz/29Hz) are now read off ALL electrodes together, rather than 23Hz-from-right-only vs 29Hz-from-left-only.
 
 FB_dist = a.fit_dist';
 
@@ -246,12 +247,14 @@ while(1)
          for xs = 1:numel(pnqAllS)
             params.fpass=[5 40];
             % Both SSVEP frequencies read off the SAME per-electrode spectrum now
-            % (previously two separate spectra: right electrodes for 17Hz, left
-            % electrodes for 20Hz).
-            All_power = mtspectrumc(mean_buff_filt(pnqAllS(xs),:)',params);
+            % (previously two separate spectra: right electrodes for 23Hz, left
+            % electrodes for 29Hz).
+            [All_power, spectrum_freq] = mtspectrumc(mean_buff_filt(pnqAllS(xs),:)',params);
+            [~, SSVEP_bin_1] = min(abs(spectrum_freq - SSVEP_freq(1)));
+            [~, SSVEP_bin_2] = min(abs(spectrum_freq - SSVEP_freq(2)));
 
-            SSVEP_power(1) = All_power(13)./mean([All_power(12) All_power(14)]); % 17Hz
-            SSVEP_power(2) = All_power(16)./mean([All_power(15) All_power(17)]); % 20Hz
+            SSVEP_power(1) = All_power(SSVEP_bin_1)./mean([All_power(SSVEP_bin_1-1) All_power(SSVEP_bin_1+1)]); % 23Hz
+            SSVEP_power(2) = All_power(SSVEP_bin_2)./mean([All_power(SSVEP_bin_2-1) All_power(SSVEP_bin_2+1)]); % 29Hz
 
             SSVEP_power_all(xs,:,cnt) = SSVEP_power;
             SSVEP_power=[];
@@ -278,8 +281,8 @@ while(1)
         % avg_AMI(1) = (avg_alpha(1)-avg_alpha(2))/(avg_alpha(1)+avg_alpha(2)); % re - le / re + le - legacy, disabled
         % avg_AMI(2) = (avg_alpha(2)-avg_alpha(1))/(avg_alpha(1)+avg_alpha(2)); % le- re / re + le - legacy, disabled
 
-        avg_SMI(1) = (log(avg_SSVEP(1))-log(avg_SSVEP(2))); % 17 - 20 Hz
-        avg_SMI(2) = (log(avg_SSVEP(2))-log(avg_SSVEP(1))); % 20 - 17 Hz
+        avg_SMI(1) = (log(avg_SSVEP(1))-log(avg_SSVEP(2))); % 23 - 29 Hz
+        avg_SMI(2) = (log(avg_SSVEP(2))-log(avg_SSVEP(1))); % 29 - 23 Hz
 
         % AMI_all(:,cnt) = avg_AMI;  % legacy alpha/AMI feedback - disabled
         SMI_all(:,cnt) = avg_SMI;
@@ -329,8 +332,8 @@ while(1)
 %
         % FB_out_avg(1) = -(avg_AMI(1) - K2(1)*avg_AMI_prev(1)); % reduce alpha in right wrt left elecs - legacy, disabled
         % FB_out_avg(2) = -(avg_AMI(2) - K2(2)*avg_AMI_prev(2)); % reduce alpha in left wrt right elecs - legacy, disabled
-        FB_out_avgs(1) = (avg_SMI(1) - avg_SMI_prev(1)); % increase 17 Hz wrt 20 Hz
-        FB_out_avgs(2) = (avg_SMI(2) - avg_SMI_prev(2)); % increase 20 Hz wrt 17 Hz
+        FB_out_avgs(1) = (avg_SMI(1) - avg_SMI_prev(1)); % increase 23 Hz wrt 29 Hz
+        FB_out_avgs(2) = (avg_SMI(2) - avg_SMI_prev(2)); % increase 29 Hz wrt 23 Hz
 %
 % % 2. Ramp Down 2.0
 % % Left
@@ -407,7 +410,7 @@ while(1)
             fb_out_sendw = median(fb_out_send_all(:,end-5+1:end),2);
         end
 
-        fb_out_sendw(3) = cnt; % nf.txt is now [SMI_17gt20, SMI_20gt17, sampleCount] - 3 elements, was 5
+        fb_out_sendw(3) = cnt; % nf.txt is now [SMI_23gt29, SMI_29gt23, sampleCount] - 3 elements, was 5
 
         ring_buffer_all(:,:,cnt) = ring_buffer;
         cut_off_all(:,:,cnt) = squeeze((SS_power_all(:,:,cnt))); % was cut_off_allL/cut_off_allR (separate hemispheres)

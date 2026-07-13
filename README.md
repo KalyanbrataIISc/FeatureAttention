@@ -101,7 +101,7 @@ and cleaning up; no CSV row is written for an aborted trial.
 
 Each flock's leaves have a thick border that flickers in luminance between
 `colorBorderLow`/`colorBorderHigh` (default black/white) — flock c1 at
-`freqC1Hz` (17 Hz default), flock c2 at `freqC2Hz` (20 Hz default). The
+`freqC1Hz` (23 Hz default), flock c2 at `freqC2Hz` (29 Hz default). The
 flicker is computed from continuous elapsed time since trial start
 (`helperFunctions/computeSsvepBorderColors.m`), independent of the cue and
 uninterrupted across the pre-cue/response/feedback phases — it only resets
@@ -238,7 +238,7 @@ their true saturated color), converting back to sRGB for `Screen`.
 (`RT_files/RT_acquisition_8.m`, run separately from this repo's
 PsychToolbox side) continuously overwrites `nf.txt` (in the project root,
 `nfFilePath` in `gameNF.m`) with a 3-element binary double vector:
-`[SMI_17gt20, SMI_20gt17, sampleCount]` — the 17Hz-vs-20Hz SSVEP power
+`[SMI_23gt29, SMI_29gt23, sampleCount]` — the 23Hz-vs-29Hz SSVEP power
 separation, computed from the pooled 28-electrode SSVEP ROI for both
 frequencies. In the 41-channel GDF EEG order (`A1-A32+B1-B9`), that ROI is
 the 14 right-electrode indices `[28 30 32 36 38 35 37 39 40 41 26 27 29 31]`
@@ -253,8 +253,8 @@ the SMI pair moved down to indices 1/2 and `sampleCount` to index 3.)
 **Which column, and when it's decided.** Which of the two SMI columns is
 "correct" depends on the trial's cue and never changes mid-trial, so it's
 decided once at trial setup (before the trial's frame loop starts): cue
-`c1` (17Hz) uses column 1 (positive when 17Hz > 20Hz), cue `c2` (20Hz) uses
-column 2 (positive when 20Hz > 17Hz).
+`c1` (23Hz) uses column 1 (positive when 23Hz > 29Hz), cue `c2` (29Hz) uses
+column 2 (positive when 29Hz > 23Hz).
 
 **Read cadence vs. visual gating.** `nf.txt` is re-read fresh every
 displayed frame, starting at trial start (frame 1) — continuing through the
@@ -323,7 +323,7 @@ That counter has no feedback from real elapsed time: every dropped frame
 makes the code's phase clock fall further behind the wall clock, and the
 error only accumulates for the rest of the trial. In practice this shows up
 as the flicker's *measured* frequency drifting visibly below its nominal
-value (e.g. 17 Hz reading as ~16.6 Hz, 20 Hz as ~19.5 Hz) by an amount that
+value (e.g. 23 Hz reading as ~22.5 Hz, 29 Hz as ~28.3 Hz) by an amount that
 tracks how much load the GPU is under - which will degrade SSVEP phase
 locking and power in any later analysis.
 
@@ -379,22 +379,22 @@ one function per file.
 
 **The paddle is the stimulus and the effector.** A wide paddle sits near the
 bottom of the screen, split across its width into three regions: a grating
-flickering at `gratingLeftFreqHz` (17 Hz) on the left, a **non-flickering**
-strip in the middle, and a grating at `gratingRightFreqHz` (20 Hz) on the
+flickering at `gratingLeftFreqHz` (23 Hz) on the left, a **non-flickering**
+strip in the middle, and a grating at `gratingRightFreqHz` (29 Hz) on the
 right. Those two gratings are the entire SSVEP stimulus. Their flicker is an
 on-off sinusoidal contrast envelope — at the peak of each cycle the bars sit at
 full black/white contrast, at the trough both collapse to a uniform grey and
 the pattern vanishes — so the flicker fundamental is exactly the nominal
 frequency (`breakoutHelperFunctions/computeGratingColors.m`). A
 contrast-*reversing* grating was deliberately not used: its dominant response
-would land at 2f, not at the 17/20 Hz bins the acquisition and the control law
+would land at 2f, not at the 23/29 Hz bins the acquisition and the control law
 are built around.
 
 **Paddle motion is the neurofeedback.** `nf.txt` is read fresh every displayed
 frame (`breakoutHelperFunctions/readNfPair.m`, which reads both columns in one
-`fopen`, unlike the leaves task's one-column `readNFValue.m`). 17 Hz dominance
-drives the paddle left, 20 Hz dominance drives it right, at a speed **linear**
-in `nf20 - nf17`, clamped to `paddleMaxSpeedPxPerSec`, with a `paddleNfDeadzone`
+`fopen`, unlike the leaves task's one-column `readNFValue.m`). 23 Hz dominance
+drives the paddle left, 29 Hz dominance drives it right, at a speed **linear**
+in `nf29 - nf23`, clamped to `paddleMaxSpeedPxPerSec`, with a `paddleNfDeadzone`
 that pins near-neutral lateralisation to a standstill
 (`computePaddleVelocityFromNf.m`). So attending to one side of the paddle
 steers the paddle to that side. A failed read (file caught mid-write) holds the
@@ -428,7 +428,7 @@ materialises on top of it.
 1. **Get ready** (`preSpawnDelaySec`) — no ball, no trigger, no logging, but
    the gratings already flicker and the paddle already tracks NF, so the SSVEP
    response has settled by the time the trial starts. Prefer whole seconds
-   here: 17 and 20 Hz both complete a whole number of cycles per second, so the
+   here: 23 and 29 Hz both complete a whole number of cycles per second, so the
    flicker is back at zero phase exactly at ball spawn.
 2. **Ball spawn = trial start** — trigger `trialstart`, ball launched upward
    from the paddle at a random angle within `±ballLaunchMaxAngleDeg`.
@@ -443,7 +443,7 @@ gratings are on screen across that boundary, so resetting the phase there would
 step the sinusoid discontinuously and evoke a transient at exactly the
 `trialstart` trigger. As in `gameNFv2.m`, that phase is computed from measured
 `Screen('Flip')` VBL timestamps rather than a frame counter, so a dropped frame
-costs one bounded phase correction instead of permanently detuning 17/20 Hz.
+costs one bounded phase correction instead of permanently detuning 23/29 Hz.
 
 **Triggers.** Sent as raw bytes via `helperFunctions/sendNumericTrigger.m`, with
 the values set in the `%% PARAMETERS` block, so this task can define its own
@@ -485,7 +485,7 @@ of the ball falling. A `~100ms` trace of the whole game state (sampled every
 that cadence) in `p<participant>_b<block>_breakout_trace.csv`:
 
 ```
-TrialNumber, FrameNumber, SampleTime, NF17, NF20, NFSigned, NFReadOk,
+TrialNumber, FrameNumber, SampleTime, NF23, NF29, NFSigned, NFReadOk,
 PaddleCenterX, PaddleVxPxPerSec, BallX, BallY, BallVxPxPerSec, BallVyPxPerSec,
 BallSpin, BrickActive, BrickCenterX, BrickCenterY, BricksBroken
 ```

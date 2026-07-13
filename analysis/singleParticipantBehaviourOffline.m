@@ -76,8 +76,8 @@ offline.windowSeconds     = 2;
 offline.initialOffsetSec  = 2;
 offline.timelinePoints    = 99;
 offline.alphaBand         = [8 12];
-offline.ssvepLeftHz       = 18;
-offline.ssvepRightHz      = 14;
+offline.ssvepLeftHz       = 29;
+offline.ssvepRightHz      = 23;
 offline.fpass             = [5 40];
 offline.baselineIdx       = 70:79;
 offline.timeAxis          = (-(offline.timelinePoints - 1):0) * offline.stepSec;
@@ -174,6 +174,8 @@ if runPSStyleSpectra
     ps.removeTrialsIdx   = [];
     ps.reReferenceAvg    = true;
     ps.normMode          = 'rel-mean';
+    ps.ssvepLeftHz       = offline.ssvepLeftHz;
+    ps.ssvepRightHz      = offline.ssvepRightHz;
     ps.leftChs           = [5 7 9 15 17];
     ps.rightChs          = [28 30 32 36 38];
     ps.manualRemove      = psManualRemove;
@@ -382,8 +384,8 @@ for k = 1:numel(vals)
     spectRightSeries = [];
 
     alphaMask = [];
-    idx18 = [];
-    idx14 = [];
+    idxSsvepLeft = [];
+    idxSsvepRight = [];
 
     for tp = 1:nTime
         endIdx = windowEnds(tp);
@@ -393,20 +395,20 @@ for k = 1:numel(vals)
 
         if isempty(alphaMask)
             alphaMask = freqs >= settings.alphaBand(1) & freqs <= settings.alphaBand(2);
-            [~, idx18] = min(abs(freqs - settings.ssvepLeftHz));
-            [~, idx14] = min(abs(freqs - settings.ssvepRightHz));
+            [~, idxSsvepLeft] = min(abs(freqs - settings.ssvepLeftHz));
+            [~, idxSsvepRight] = min(abs(freqs - settings.ssvepRightHz));
             result.spectFreqs = freqs;
         end
 
         alphaLeft  = mean(psd(alphaMask, settings.alphaLeftCh), 'all', 'omitnan');
         alphaRight = mean(psd(alphaMask, settings.alphaRightCh), 'all', 'omitnan');
-        ssvLeft  = mean(psd(idx18, settings.ssvLeftCh) ./ ...
-            mean(psd([idx18 - 1, idx18 + 1], settings.ssvLeftCh), 1), 'all', 'omitnan');
-        ssvRight = mean(psd(idx14, settings.ssvRightCh) ./ ...
-            mean(psd([idx14 - 1, idx14 + 1], settings.ssvRightCh), 1), 'all', 'omitnan');
-        % ssvLeft  = mean(psd(idx18, settings.ssvLeftCh) ./ ...
+        ssvLeft  = mean(psd(idxSsvepLeft, settings.ssvLeftCh) ./ ...
+            mean(psd([idxSsvepLeft - 1, idxSsvepLeft + 1], settings.ssvLeftCh), 1), 'all', 'omitnan');
+        ssvRight = mean(psd(idxSsvepRight, settings.ssvRightCh) ./ ...
+            mean(psd([idxSsvepRight - 1, idxSsvepRight + 1], settings.ssvRightCh), 1), 'all', 'omitnan');
+        % ssvLeft  = mean(psd(idxSsvepLeft, settings.ssvLeftCh) ./ ...
         %     mean(psd(~alphaMask, settings.ssvLeftCh), 1), 'all', 'omitnan');
-        % ssvRight = mean(psd(idx14, settings.ssvRightCh) ./ ...
+        % ssvRight = mean(psd(idxSsvepRight, settings.ssvRightCh) ./ ...
         %     mean(psd(~alphaMask, settings.ssvRightCh), 1), 'all', 'omitnan');
 
         if trainingSide == 0
@@ -1187,6 +1189,8 @@ result.sensorsToRemove = sensorsToRemove;
 result.channelsUsed = chUse;
 result.leftChannelsUsed = leftUse;
 result.rightChannelsUsed = rightUse;
+result.ssvepLeftHz = settings.ssvepLeftHz;
+result.ssvepRightHz = settings.ssvepRightHz;
 result.miniEpochCount = size(allEpochs, 3);
 result.fOngoing = fOngoing(:).';
 result.fEvoked = fEvoked(:).';
@@ -1486,7 +1490,8 @@ function createSpectralFigure(figName, participantNum, spectFreqs, spectLeftTs, 
     spectRightTs, timeAxis, alphaBand, ssvepLeftHz, ssvepRightHz, sideLabel)
 figure('Color', 'w', 'Name', figName, 'NumberTitle', 'off');
 panels = {spectLeftTs, spectRightTs};
-panelTitles = {'Left hemisphere (18 Hz stim)', 'Right hemisphere (14 Hz stim)'};
+panelTitles = {sprintf('Left hemisphere (%g Hz stim)', ssvepLeftHz), ...
+               sprintf('Right hemisphere (%g Hz stim)', ssvepRightHz)};
 
 allVals = [];
 for panelIdx = 1:2
@@ -1655,8 +1660,8 @@ set(gca, 'FontSize', 12, 'LineWidth', 1.2);
 figure('Color', 'w', 'Name', sprintf('P%d_PS_evoked_mean_channels', p), ...
     'NumberTitle', 'off');
 plot(result.fEvoked, result.evokedChMean, 'LineWidth', 1.6); hold on; grid on;
-xline(14, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
-xline(18, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
+xline(result.ssvepRightHz, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
+xline(result.ssvepLeftHz, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
 xlim([2 40]);
 xlabel('Frequency (Hz)'); ylabel('Power');
 title(sprintf('Participant %d - PS evoked (time-avg -> PSD)', p));
@@ -1666,8 +1671,8 @@ figure('Color', 'w', 'Name', sprintf('P%d_PS_evoked_left_right', p), ...
     'NumberTitle', 'off');
 plot(result.fEvoked, result.evokedLMean, 'Color', colLeft, 'LineWidth', 1.8); hold on; grid on;
 plot(result.fEvoked, result.evokedRMean, 'Color', colRight, 'LineWidth', 1.8);
-xline(14, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
-xline(18, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
+xline(result.ssvepRightHz, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
+xline(result.ssvepLeftHz, ':', 'LineWidth', 2, 'Color', [0.2 0.2 0.2]);
 xlim([2 40]);
 legend({'Left-electrodes', 'Right-electrodes'}, 'Location', 'northeast');
 xlabel('Frequency (Hz)'); ylabel('Power');
@@ -2164,8 +2169,8 @@ plotReport.colormap = 'turbo';
 plotReport.alphaBandLines = settings.alphaBand;
 plotReport.ssvepLinesHz = [settings.ssvepLeftHz settings.ssvepRightHz];
 plotReport.panels = struct( ...
-    'leftHemisphere', struct('title', 'Left hemisphere (18 Hz stim)', 'omittedData', 'Panel spectral matrix omitted.'), ...
-    'rightHemisphere', struct('title', 'Right hemisphere (14 Hz stim)', 'omittedData', 'Panel spectral matrix omitted.'));
+    'leftHemisphere', struct('title', sprintf('Left hemisphere (%g Hz stim)', settings.ssvepLeftHz), 'omittedData', 'Panel spectral matrix omitted.'), ...
+    'rightHemisphere', struct('title', sprintf('Right hemisphere (%g Hz stim)', settings.ssvepRightHz), 'omittedData', 'Panel spectral matrix omitted.'));
 plotReport.colorLimits = 'omitted_with_spectral_time_series_data';
 plotReport.omittedData = struct( ...
     'reason', 'Spectral time-series matrices are omitted to keep the JSON report compact.', ...
@@ -2279,7 +2284,7 @@ plotReport.plots = struct( ...
         'x', result.fEvoked, ...
         'y', result.evokedChMean, ...
         'xLim', [2 40], ...
-        'xLines', [14 18], ...
+        'xLines', [result.ssvepRightHz result.ssvepLeftHz], ...
         'title', sprintf('Participant %d - PS evoked (time-avg -> PSD)', result.participantNum)), ...
     'evokedLeftRight', struct( ...
         'figureName', sprintf('P%d_PS_evoked_left_right', result.participantNum), ...
@@ -2287,7 +2292,7 @@ plotReport.plots = struct( ...
         'leftY', result.evokedLMean, ...
         'rightY', result.evokedRMean, ...
         'xLim', [2 40], ...
-        'xLines', [14 18], ...
+        'xLines', [result.ssvepRightHz result.ssvepLeftHz], ...
         'legend', {{'Left-electrodes', 'Right-electrodes'}}, ...
         'title', sprintf('Participant %d - PS evoked spectrum (Left vs Right)', result.participantNum)));
 plotReport.method = 'Each PS figure uses plot() lines with grid on, xlim [2 40], and vertical reference lines at alpha or SSVEP frequencies.';

@@ -16,7 +16,7 @@ function plotSsvepMeanSem(timeAxisSec, meanMat, semMat, freqLabels, lineColors, 
 %
 %   timeAxisSec: 1 x timelinePoints, seconds relative to the locking event.
 %   meanMat, semMat: numFreqs x timelinePoints.
-%   freqLabels: cellstr, one per row, e.g. {'17 Hz', '20 Hz'}.
+%   freqLabels: cellstr, one per row, e.g. {'23 Hz', '29 Hz'}.
 %   lineColors: numFreqs x 3 RGB triples in [0, 1].
 %   titleStr: figure title.
 %   subtitleStr: figure subtitle (e.g. explaining what the cue means).

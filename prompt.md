@@ -49,3 +49,10 @@ In the code, after the initialisation setup, there will be a parameter section, 
 Please take this seriously, as this is a very important real cognitive science experiment and everything should be tightly controlled. As we will be using old version of matlab where you cannot have helper function on the same file. You don’t have to run the MATLAB yourself. I’ll check it manually.
 For now do not worry about it's analysis file or anything. Just make the game file and it's helper functions in its separate folder. I have already made an empty file and folder for you to work on. We will be using the same RT files and nf file. So please don't change anything else.
 God speed brother!
+
+---
+
+Okay, here we are using two SSVEP frequencies. One is 17Hz and another is 20Hz. But now I want both of them to be a bit higher and be prime numbers. I think 23 and 29 will be good. I want you to refactor the entire codebase to be designed around these two insted of 17 and 20. Wherever there in 17 Hz replace it with 23 and wherever it is 20, replace with 29. All the games, RT files and analysis code must be updated.
+Do not touch data folder, let it be as it is. Do not change anything outside of this project.
+And do one thing, for each file where it is needed for the values of frequency; keep it as easily changable parameter near the begining section of the code. Other than this do not try to change any logic, method or style of the codes.
+God speed brother!

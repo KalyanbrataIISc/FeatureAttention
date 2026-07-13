@@ -14,7 +14,7 @@ clc;
 %
 %     log(power at target frequency / mean(power at adjacent frequency bins))
 %
-% separately for 17Hz and 20Hz. No pre-cue baseline subtraction and no
+% separately for 23Hz and 29Hz. No pre-cue baseline subtraction and no
 % per-trial cue/response zeroing are applied. The plot helper aligns raw
 % trial series to response, averages across trials within each cue, and
 % zeroes only the final averaged trace to its own value at response
@@ -30,6 +30,9 @@ clc;
 %% Inputs
 participantNums = [58 59];
 faDataRoot = '/Volumes/250GBKC/FAData';
+% SSVEP tagging frequencies.
+freqC1Hz = 23;
+freqC2Hz = 29;
 
 % Plotting scope: 'combined', 'individual', or 'both'.
 plotMode = 'both';
@@ -67,8 +70,9 @@ pairMatchToleranceSec = 0.2;
 % SSVEP sliding-window spectral estimation.
 spectrumWindowSec = 1;
 stepSec           = 0.1;
-freqsHz           = [17, 20];
-freqLabels        = {'17 Hz (c1 flock)', '20 Hz (c2 flock)'};
+freqsHz           = [freqC1Hz, freqC2Hz];
+freqLabels        = {sprintf('%g Hz (c1 flock)', freqC1Hz), ...
+                     sprintf('%g Hz (c2 flock)', freqC2Hz)};
 freqColors        = [0 191 255; 255 140 0] / 255; % same RGB as gameNFv3.m's colorC1/colorC2
 
 % Response-locked display window. Cue onset is plotted as marker dots.

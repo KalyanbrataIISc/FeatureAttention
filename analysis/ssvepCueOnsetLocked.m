@@ -30,8 +30,8 @@ clc;
 %   4) For each matched trial, locates that trial's own cue-onset trigger
 %      and (if a response was given - a timeout has none) response trigger
 %      (helperFunctions/findEventSample.m), computes a sliding-window
-%      adjacent-bin-normalized raw log-power time series (log-SNR) at 17Hz
-%      and 20Hz over the same 28 SSVEP electrodes used by
+%      adjacent-bin-normalized raw log-power time series (log-SNR) at 23Hz
+%      and 29Hz over the same 28 SSVEP electrodes used by
 %      RT_files/RT_acquisition_8.m (Chronux multitaper). Each raw trial
 %      series is then time-locked to cue onset
 %      (helperFunctions/alignSeriesToEvent.m), with NaN-padding on
@@ -40,7 +40,7 @@ clc;
 %      are plotted as one dot per trial at their response time relative to
 %      cue onset.
 %   5) Averages across matched trials, split by cue (c1 vs c2 - see "What
-%      c1/c2 mean" below), and plots 17Hz vs 20Hz mean +/- SEM against time
+%      c1/c2 mean" below), and plots 23Hz vs 29Hz mean +/- SEM against time
 %      relative to cue onset.
 %   6) Separately, pools sequential 3-second mini-epochs (whole trial) over
 %      the same 41-channel montage minus B1/B2 (see "Channel montage"
@@ -63,14 +63,14 @@ clc;
 %
 % What c1/c2 mean (see README.md's "The cue and the task rule"):
 %   - Flock 1 is always shown in colorC1 and its SSVEP border always
-%     flickers at freqC1Hz (17Hz). Cue = c1 means: attend flock 1 and
+%     flickers at freqC1Hz (23Hz). Cue = c1 means: attend flock 1 and
 %     report its POINTING direction.
 %   - Flock 2 is always shown in colorC2 and its SSVEP border always
-%     flickers at freqC2Hz (20Hz). Cue = c2 means: attend flock 2 and
+%     flickers at freqC2Hz (29Hz). Cue = c2 means: attend flock 2 and
 %     report its MOVING direction.
 %   If attention modulates steady-state SSVEP power at the attended
 %   flock's tagged frequency, c1-cue trials should show relatively more
-%   17Hz (vs 20Hz) power after cue onset, and c2-cue trials the reverse.
+%   23Hz (vs 29Hz) power after cue onset, and c2-cue trials the reverse.
 %
 % Channel montage: A1-A32 plus B1-B9 is this lab's long-standing
 % 41-channel subset (analysis/singleParticipantBehaviourOffline.m's
@@ -90,6 +90,9 @@ clc;
 %% Inputs
 participantNums = [58 59];
 faDataRoot = '/Volumes/250GBKC/FAData';
+% SSVEP tagging frequencies.
+freqC1Hz = 23;
+freqC2Hz = 29;
 
 % Plotting scope: 'combined' pools every participant in participantNums
 % together for one set of plots; 'individual' produces one full set of
@@ -134,8 +137,9 @@ pairMatchToleranceSec = 0.2;
 % pipeline's 1s window / 0.1s step / Chronux tapers=[1 1]).
 spectrumWindowSec = 1;
 stepSec           = 0.1;
-freqsHz           = [17, 20];
-freqLabels        = {'17 Hz (c1 flock)', '20 Hz (c2 flock)'};
+freqsHz           = [freqC1Hz, freqC2Hz];
+freqLabels        = {sprintf('%g Hz (c1 flock)', freqC1Hz), ...
+                     sprintf('%g Hz (c2 flock)', freqC2Hz)};
 freqColors        = [0 191 255; 255 140 0] / 255; % same RGB as gameNFv3.m's colorC1/colorC2
 
 % Event-locked display windows.

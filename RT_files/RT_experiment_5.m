@@ -15,8 +15,8 @@ run_no = input('Enter run no');
 method = 'DSS';
 channels = 41;        
 Fs = 128;
-% SSVEP_freq = [15 18];
-% Noise_freq = [14 16 17 19];
+SSVEP_freq = [23 29];
+% Noise_freq = [22 24 28 30];
 cut_off_init = [0,0]; %cc
 delta = [2,2];  %cc % vestigial - alpha/AMI feedback is disabled in RT_acquisition_8.m, so this gain is no longer used; still passed through harmlessly
 deltas = [0.2,0.2];  %cc % SMI/SSVEP feedback gain - this is the one that matters now
@@ -28,7 +28,7 @@ while(1)
 
 run_no = run_no + 1;
 opts = {'subject_no',subject_no,'run_no',run_no,'method',method,'channels',channels,'Fs',Fs,...
-    'cut_off_init',cut_off_init,'delta',delta,'deltas',deltas};
+    'SSVEP_freq',SSVEP_freq,'cut_off_init',cut_off_init,'delta',delta,'deltas',deltas};
 
 [cut_off_init] = RT_acquisition_8(opts);
 

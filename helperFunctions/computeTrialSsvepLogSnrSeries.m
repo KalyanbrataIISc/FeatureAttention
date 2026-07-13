@@ -22,7 +22,7 @@ function [seriesMat, windowCenterTimesSec] = computeTrialSsvepLogSnrSeries( ...
 %   signalRow: 1 x nSamples vector, already preprocessed, for exactly this
 %       trial's [start, stop] sample range.
 %   Fs: sampling rate of signalRow (Hz).
-%   freqsHz: vector of target frequencies (e.g. [17 20]).
+%   freqsHz: vector of target frequencies (e.g. [23 29]).
 %   windowSec, stepSec: sliding-window length and step (seconds).
 %   chronuxParams: struct of Chronux params for mtspectrumc (Fs, tapers,
 %       pad, fpass, trialave, err).

@@ -170,8 +170,8 @@ colorBorderLow  = black + shiftValue;  % SSVEP flicker low-luminance border colo
 colorBorderHigh = white - shiftValue;  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
-freqC1Hz = 17;
-freqC2Hz = 20;
+freqC1Hz = 23;
+freqC2Hz = 29;
 
 % =================== NEUROFEEDBACK (SSVEP lateralisation) ===================
 % The NF stimulus is the leaf fill color itself. Before cue onset, and at
@@ -197,8 +197,8 @@ freqC2Hz = 20;
 % cadence - reading on our own fixed 100ms clock could be out of phase with
 % that and add up to ~100ms of pure latency for no reason.
 %
-% nf.txt is a 3-element double vector [SMI_17gt20, SMI_20gt17,
-% sampleCount] - the 17Hz-vs-20Hz SSVEP power separation this task's NF
+% nf.txt is a 3-element double vector [SMI_23gt29, SMI_29gt23,
+% sampleCount] - the 23Hz-vs-29Hz SSVEP power separation this task's NF
 % reflects, now computed from all electrodes for both frequencies (see
 % RT_acquisition_8.m). Previously 5 elements with an AMI/alpha
 % lateralisation pair at indices 1/2 - that alpha-based feedback was never
@@ -209,8 +209,8 @@ freqC2Hz = 20;
 % loop starts), since the cue itself never changes mid-trial.
 nfFilePath          = fullfile(experimentRoot, 'nf.txt');
 nfTraceLogIntervalSec = 0.100;  % NF trace CSV is still logged only this often (not every frame) to keep the file a sane size
-nfIndexC1           = 1;      % nf.txt column: positive when 17Hz (c1) SSVEP power exceeds 20Hz
-nfIndexC2           = 2;      % nf.txt column: positive when 20Hz (c2) SSVEP power exceeds 17Hz
+nfIndexC1           = 1;      % nf.txt column: positive when 23Hz (c1) SSVEP power exceeds 29Hz
+nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP power exceeds 23Hz
 
 % The fixed cue-onset reveal (and the live-NF reveal growth on top of it)
 % is calibrated in CIELAB Delta E - perceived color difference - rather
