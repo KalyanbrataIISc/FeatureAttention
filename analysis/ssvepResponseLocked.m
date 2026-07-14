@@ -3,12 +3,12 @@ close all;
 clc;
 
 % -------------------------------------------------------------------------
-%% Response-locked SSVEP analysis - gameNFv3.m
+%% Response-locked SSVEP analysis and evoked/ongoing power spectra - gameNFv3.m
 %
 % This script mirrors analysis/ssvepCueOnsetLocked.m's GDF loading,
-% preprocessing, trial matching, and 28-electrode SSVEP ROI, but plots the
-% raw adjacent-bin-normalized SSVEP log-power series locked to response
-% instead of cue onset.
+% preprocessing, trial matching, 28-electrode SSVEP ROI, and independent
+% evoked/ongoing power spectra, but plots the raw adjacent-bin-normalized
+% SSVEP log-power series locked to response instead of cue onset.
 %
 % For each matched trial, the script computes the raw log-SNR time series:
 %
@@ -21,18 +21,25 @@ clc;
 % (t = 0). Cue onset is shown as one dot per contributing trial, relative
 % to the response.
 %
+% Separately from the response-locked series, sequential 3-second
+% mini-epochs spanning each whole matched trial are pooled to compute
+% ongoing (induced) and evoked power spectra. These use the same settings
+% and 39-channel montage as analysis/ssvepCueOnsetLocked.m, and are made
+% for the combined and/or individual scopes selected by plotMode.
+%
 % Channel montage: all GDF reads/preprocessing use the 41-channel
 % A1-A32+B1-B9 subset. The SSVEP ROI is the 14 right + 14 left electrode
 % indices from RT_files/RT_acquisition_8.m, pooled together for both
-% tagging frequencies.
+% tagging frequencies. The independent evoked/ongoing spectra use all 41
+% channels except the manual exclusions configured below.
 % -------------------------------------------------------------------------
 
 %% Inputs
 participantNums = [58 59];
 faDataRoot = '/Volumes/250GBKC/FAData';
 % SSVEP tagging frequencies.
-freqC1Hz = 17; 23;
-freqC2Hz = 20; 29;
+freqC1Hz = 23;
+freqC2Hz = 29;
 
 % Plotting scope: 'combined', 'individual', or 'both'.
 plotMode = 'both';
@@ -82,6 +89,14 @@ responseWindowSec = [-4, 0.1];
 % analysis/results/. Set false to only display figures.
 saveFigures = false;
 
+% Evoked/ongoing power spectrum settings. These spectra are independent of
+% response locking: they pool fixed-length mini-epochs across each whole
+% matched trial, matching analysis/ssvepCueOnsetLocked.m.
+spectraEpochLenSec = 3;
+spectraFpass       = [2 40];
+spectraNormMode    = 'rel-mean';
+manuallyExcludedSpectraChannels = {'B1', 'B2'};
+
 %% Paths and toolboxes
 analysisDir = fileparts(mfilename('fullpath'));
 repoRoot = fileparts(analysisDir);
@@ -101,6 +116,7 @@ if any(ssvepRoiChannelIdx < 1 | ssvepRoiChannelIdx > numel(scalpLabels))
         'SSVEP ROI indices must be within the %d-channel scalp label list.', numel(scalpLabels));
 end
 ssvepRoiLabels = scalpLabels(ssvepRoiChannelIdx);
+spectraChannelLabels = setdiff(scalpLabels, manuallyExcludedSpectraChannels, 'stable');
 
 chronuxParams = struct( ...
     'Fs', desiredTargetFs, ... % corrected below to the actual achieved targetFs once known
@@ -110,10 +126,28 @@ chronuxParams = struct( ...
     'trialave', 0, ...
     'fpass', [1 45]);
 
-%% Phase A: per-participant loading/preprocessing and per-trial SSVEP series
+spectraChronuxParamsOngoing = struct( ...
+    'Fs', desiredTargetFs, ... % corrected below
+    'tapers', [1 1], ...
+    'pad', 1, ...
+    'err', 0, ...
+    'trialave', 1, ...
+    'fpass', spectraFpass);
+spectraChronuxParamsEvoked = struct( ...
+    'Fs', desiredTargetFs, ... % corrected below
+    'tapers', [1 1], ...
+    'pad', 0, ...
+    'err', 0, ...
+    'trialave', 0, ...
+    'fpass', spectraFpass);
+
+%% Phase A: per-participant loading/preprocessing, per-trial SSVEP series,
+% and pooled mini-epochs for the independent evoked/ongoing spectra
 allTrials = struct('participant', {}, 'block', {}, 'trialNumber', {}, 'cue', {}, 'series', {}, ...
     'windowCenterTimesSec', {}, 'cueOnsetRelSec', {}, 'responseRelSec', {}, 'durationSec', {});
 commonTargetFs = [];
+pooledMiniEpochs = [];
+miniEpochParticipant = [];
 
 for participantIdx = 1:numel(participantNums)
     participantNum = participantNums(participantIdx);
@@ -141,6 +175,8 @@ for participantIdx = 1:numel(participantNums)
              'onto a common time/frequency axis.'], participantNum, targetFs, commonTargetFs);
     end
     chronuxParams.Fs = targetFs;
+    spectraChronuxParamsOngoing.Fs = targetFs;
+    spectraChronuxParamsEvoked.Fs = targetFs;
 
     if isKey(manualBadChannels, participantNum)
         manualBad = manualBadChannels(participantNum);
@@ -166,7 +202,17 @@ for participantIdx = 1:numel(participantNums)
     end
     fprintf('  SSVEP ROI (%d channels): %s\n', numel(ssvepRoiLabels), strjoin(ssvepRoiLabels, ', '));
     roiSignal = mean(referencedData.trial{1}(roiMask, :), 1);
+
+    spectraMask = ismember(referencedData.label, spectraChannelLabels);
+    if nnz(spectraMask) ~= numel(spectraChannelLabels)
+        error('ssvepResponseLocked:spectraChannelsMissing', ...
+            'Only %d of the %d requested spectra channels were found in participant %d''s data.', ...
+            nnz(spectraMask), numel(spectraChannelLabels), participantNum);
+    end
+    spectraSignal = referencedData.trial{1}(spectraMask, :);
     clear referencedData;
+
+    epochLenSamples = round(spectraEpochLenSec * targetFs);
 
     trialTable = loadParticipantTrialTable(participantDir, participantNum);
     pairSamples = extractTrialStartStopPairs(eventSamples, eventValues, trigTrialStart, trigTrialStop);
@@ -229,8 +275,15 @@ for participantIdx = 1:numel(participantNums)
             'durationSec', numel(trialSignal) / targetFs);
         allTrials(end + 1) = thisTrial; %#ok<SAGROW>
         nMatched = nMatched + 1;
+
+        trialSpectraData = spectraSignal(:, startIdx:stopIdx);
+        theseEpochs = extractMiniEpochs(trialSpectraData, epochLenSamples);
+        pooledMiniEpochs = cat(3, pooledMiniEpochs, theseEpochs);
+        miniEpochParticipant = [miniEpochParticipant, ...
+            repmat(participantNum, 1, size(theseEpochs, 3))]; %#ok<AGROW>
     end
     fprintf('  %d trial(s) contributed an SSVEP series; %d had a response trigger.\n', nMatched, nWithResponse);
+    clear roiSignal spectraSignal;
 end
 
 if isempty(allTrials)
@@ -257,6 +310,13 @@ if runCombined
     plotSsvepLockedToEvent(allTrials, 'responseRelSec', stepSec, abs(responseWindowSec(1)), responseWindowSec(2), ...
         cueCodes, buildCueTitles('response', ''), freqLabels, freqColors, 'response', ...
         resultsDir, saveFigures, 'ssvepResponseLocked_combined', 'cueOnsetRelSec');
+
+    nMiniEpochsCombined = size(pooledMiniEpochs, 3);
+    spectraSubtitleCombined = sprintf('n = %d mini-epochs (%gs each) from %d trials, %d participant(s), %d channels', ...
+        nMiniEpochsCombined, spectraEpochLenSec, numel(allTrials), numel(participantNums), numel(spectraChannelLabels));
+    plotEvokedOngoingSpectra(pooledMiniEpochs, spectraChronuxParamsOngoing, spectraChronuxParamsEvoked, ...
+        spectraNormMode, freqsHz, freqLabels, freqColors, 'All participants - ', spectraSubtitleCombined, ...
+        resultsDir, saveFigures, 'ssvepResponseLockedSpectra_combined');
 end
 
 if runIndividual
@@ -273,5 +333,13 @@ if runIndividual
         plotSsvepLockedToEvent(participantTrials, 'responseRelSec', stepSec, abs(responseWindowSec(1)), responseWindowSec(2), ...
             cueCodes, buildCueTitles('response', scopePrefix), freqLabels, freqColors, 'response', ...
             resultsDir, saveFigures, sprintf('ssvepResponseLocked_P%d', participantNum), 'cueOnsetRelSec');
+
+        participantMiniEpochs = pooledMiniEpochs(:, :, miniEpochParticipant == participantNum);
+        nMiniEpochsThis = size(participantMiniEpochs, 3);
+        spectraSubtitleThis = sprintf('n = %d mini-epochs (%gs each) from %d trials, %d channels', ...
+            nMiniEpochsThis, spectraEpochLenSec, numel(participantTrials), numel(spectraChannelLabels));
+        plotEvokedOngoingSpectra(participantMiniEpochs, spectraChronuxParamsOngoing, spectraChronuxParamsEvoked, ...
+            spectraNormMode, freqsHz, freqLabels, freqColors, sprintf('P%d - ', participantNum), spectraSubtitleThis, ...
+            resultsDir, saveFigures, sprintf('ssvepResponseLockedSpectra_P%d', participantNum));
     end
 end

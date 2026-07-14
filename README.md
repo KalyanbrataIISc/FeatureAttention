@@ -165,6 +165,11 @@ ResponseTimeout, TrialEnd
   overwritten by the external real-time acquisition process; read (not
   written) by `gameNF.m`.
 - `data/` — per-participant/block CSV logs (created on first run).
+- `analysis/ssvepCueOnsetLocked.m` and
+  `analysis/ssvepResponseLocked.m` — offline cue-locked and response-locked
+  SSVEP analyses. Each script can independently generate combined and/or
+  per-participant ongoing (induced) and evoked power spectra in addition to
+  its event-locked time-series plots.
 
 ## Running it
 
