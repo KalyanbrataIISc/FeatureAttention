@@ -31,8 +31,8 @@ clc;
 participantNums = [58 59];
 faDataRoot = '/Volumes/250GBKC/FAData';
 % SSVEP tagging frequencies.
-freqC1Hz = 23;
-freqC2Hz = 29;
+freqC1Hz = 17; 23;
+freqC2Hz = 20; 29;
 
 % Plotting scope: 'combined', 'individual', or 'both'.
 plotMode = 'both';
