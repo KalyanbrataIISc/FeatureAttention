@@ -507,8 +507,104 @@ physics can be exercised without a live NF stream; on the real rig the paddle
 is always NF-driven. Otherwise run `python3 simulate_nf.py --path nf.txt`
 alongside it, exactly as for `gameNF*.m`.
 
+## SSVEP test task (`SSVEPTestTrials.m`)
+
+A third, independent task — not a variant of the leaves task or Breakout. It
+shares only the Cedrus/trigger/eye-tracking scaffolding in `functions/` and a
+handful of generic helpers (`ensureCsvWithHeader`, `checkEscape`,
+`cleanupExperiment`, `getElapsedTime`). Its own logic lives in
+`ssvepTestHelperFunctions/`, one function per file. It has no cue, no
+neurofeedback, and no directional response — it exists to test SSVEP tagging
+and a letter-counting working-memory load in one simple design.
+
+**Stimulus.** A circular black/white grating patch flickers in place at
+screen center: a plain vertical-bar square-wave grating (drawn with
+`breakoutHelperFunctions/drawFlickerGrating.m`, the same grating primitive
+`gameBreakoutv2.m`'s paddle uses) whose *contrast* is what flickers
+sinusoidally at `gratingFreqHz` (23 Hz default) between `grey` (0 contrast -
+the pattern vanishes into the background) and full black/white (via
+`breakoutHelperFunctions/computeGratingColors.m`). The grating is clipped to
+a circle by a one-time RGBA aperture-mask texture
+(`ssvepTestHelperFunctions/createCircularApertureMask.m`, built once at
+setup, not rebuilt per frame) drawn on top of the grating rect each frame -
+this keeps the per-frame cost the same as a plain rectangular grating while
+still presenting a circular patch. A small static white disc
+(`discRadiusPx`) sits at the patch's center; inside it, one letter at a time
+is shown, changing every `letterDurationSec`. The letter's own contrast
+flickers too, from `discColor` (invisible against the disc) up to
+`letterColorPeak`, computed from the *exact same* elapsed-time value and
+`gratingFreqHz` as the grating - so the letter and the grating are always in
+exact phase, by construction (same formula, same `t`).
+
+As in `gameNFv2.m`/`gameBreakoutv2.m`, this phase is driven from real
+`Screen('Flip')` VBL timestamps, not a frame counter, so a dropped frame
+costs one bounded phase correction rather than a permanent frequency drift;
+dropped frames during the stream are logged the same way (see CSV output
+below).
+
+**Letter rules and the task.** Letters are drawn from `letterPool` (A-Z) via
+`ssvepTestHelperFunctions/generateLetterSequence.m`: the same letter never
+appears on two consecutive draws, and the target letter `X` appears some
+random number of times per trial, drawn uniformly from
+`[xCountMin, xCountMax]` (2-5 by default, clamped down if the trial is too
+short to fit that many X's with no two adjacent). The participant silently
+counts the X's during the stream and, once it ends, reports whether their
+count was **odd** or **even**.
+
+**Trial timeline.**
+
+1. **SSVEP + letter stream** (`trialDurationSec`, 10s default) - trigger
+   `trialstart` is sent right after the flip that shows the very first
+   stimulus frame (not before, so the marker lines up with what was actually
+   displayed - see `gameBreakoutv2.m`'s ball-spawn trigger for the same
+   pattern). The grating and letter flicker continuously for the whole
+   phase; no response is collected here.
+2. **ITI** (`itiDurationSec`, 10s default, **always** exactly this long
+   regardless of RT or feedback timing) - trigger `trialstop` is sent right
+   after the stream's last frame. The screen goes blank (no SSVEP at all
+   during the ITI). Any Cedrus events queued during the stream are discarded
+   and the RT timer reset at ITI onset, so the response window opens clean.
+   The participant has until `itiResponseDeadlineSec`
+   (`itiDurationSec - itiFeedbackDurationSec`) to respond **Odd** (Cedrus
+   Left / mac left arrow) or **Even** (Cedrus Right / mac right arrow) -
+   trigger `response` is sent on a valid press. Feedback ('Correct' /
+   'Incorrect', or 'Missed' on a timeout) is then shown for
+   `itiFeedbackDurationSec`, sized so it always finishes exactly as the fixed
+   `itiDurationSec` runs out.
+
+Escaping (ESC key) at any point ends the block after sending `trialstop` (if
+the stream had already started) and cleaning up; no CSV row is written for an
+aborted trial - same convention as the leaves task.
+
+**Triggers.** Only the subset `gamev1.m` also uses: `trialstart` (20),
+`response` (40), `trialstop` (30) - see `functions/cog_send_triggers.m`. No
+new trigger codes were added.
+
+**CSV output.** One file per participant/block in `data/`, same
+header-mismatch-safe-fallback behavior as the other tasks'.
+`p<participant>_b<block>_ssveptest_trialdata.csv`, one row per trial:
+
+```
+TrialNumber, TrialStart, LetterSequence, NumLetters, XCount, CorrectResponse,
+ParticipantResponse, Accuracy, ReactionTime, ResponseTimeout, TrialEnd,
+DroppedFrameCount
+```
+
+`LetterSequence` is the literal letter string shown that trial (e.g.
+`ABXCDXEFGHIJ`); `XCount` is the ground-truth number of X's in it, and
+`CorrectResponse` is `'odd'`/`'even'` from its parity. A second file,
+`p<participant>_b<block>_ssveptest_droppedframes.csv`, logs one row per
+dropped/delayed frame during the SSVEP stream (same shape as
+`gameNFv2.m`'s): `TrialNumber, FrameNumber, VBLTime, MissedBySec`.
+
+**Running it.** Same as the other tasks - participant number, block number,
+eye tracking prompt on Windows; defaults (`000`/`000`, eye tracking off) on
+mac. All tunable values (timing, letter pool/counts, grating geometry/color,
+disc/letter appearance) are in the `%% PARAMETERS` block near the top of
+`SSVEPTestTrials.m`.
+
 ---
 **Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m`, `gameNFv2.m`,
-`gameBreakout.m` (or their helper functions) changes in a way that affects
-behavior, parameters, timing, triggers, or CSV columns, update this README to
-match in the same change. See `CLAUDE.md`.
+`gameBreakout.m`, `SSVEPTestTrials.m` (or their helper functions) changes in a
+way that affects behavior, parameters, timing, triggers, or CSV columns,
+update this README to match in the same change. See `CLAUDE.md`.
