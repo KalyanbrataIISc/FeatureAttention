@@ -35,11 +35,11 @@ clc;
 % -------------------------------------------------------------------------
 
 %% Inputs
-participantNums = [58 59];
+participantNums = [63];
 faDataRoot = '/Volumes/250GBKC/FAData';
 % SSVEP tagging frequencies.
-freqC1Hz = 23;
-freqC2Hz = 29;
+freqC1Hz = 17;
+freqC2Hz = 19;
 
 % Plotting scope: 'combined', 'individual', or 'both'.
 plotMode = 'both';
@@ -95,7 +95,7 @@ saveFigures = false;
 spectraEpochLenSec = 3;
 spectraFpass       = [2 40];
 spectraNormMode    = 'rel-mean';
-manuallyExcludedSpectraChannels = {'B1', 'B2'};
+manuallyExcludedSpectraChannels = {'B1'};
 
 %% Paths and toolboxes
 analysisDir = fileparts(mfilename('fullpath'));
