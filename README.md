@@ -170,6 +170,9 @@ ResponseTimeout, TrialEnd
   SSVEP analyses. Each script can independently generate combined and/or
   per-participant ongoing (induced) and evoked power spectra in addition to
   its event-locked time-series plots.
+- `analysis/online_view.py` — interactive GDF playback viewer with live
+  signals, FFT power, FFT phase, selected-channel averages, and automatic
+  joining of numbered GDF recording chunks.
 
 ## Running it
 
@@ -186,6 +189,51 @@ rather than only described. Press any key/button on that screen to begin;
 ESC exits at any point during the block. All tunable values (timing, leaf
 size/speed/count, colors, SSVEP frequencies, cue rectangle) are in the
 `%% PARAMETERS` block near the top of `gamev1.m`.
+
+## GDF playback viewer
+
+Run the viewer from the repository root:
+
+```bash
+python analysis/online_view.py
+```
+
+Choose the first GDF file in the left sidebar and press **Start / Reload**.
+For a recording named `test.gdf`, the viewer automatically discovers and
+joins `test_1.gdf`, `test_2.gdf`, and later numbered parts in numeric order.
+Selecting any numbered part discovers the same set. Other recordings with
+the same prefix but a different stem, such as `test_practice.gdf`, are not
+included.
+
+The viewer reads samples on demand instead of loading all 1 GB files into
+memory. The sidebar provides playback speed, play/pause, seeking, output
+sampling rate, signal history, FFT duration/window/sliding step/bin target,
+frequency limits, and a bounded FFT worker count. Shift-click selects a
+channel range and Command-click adds or removes individual channels. The
+white top plot in the live-signal tab is the time-domain average of the
+selected channels; every selected channel then has its own vertically stacked
+plot. The FFT power and phase tabs overlay the selected channels and the
+white average. **Only show the selected-channel average** hides all individual
+channel plots/traces without changing which channels contribute to that
+average. Both FFT tabs share editable X limits and have independent
+auto/manual Y scaling and Y limits; X scaling can likewise use the selected
+limits or the complete 0-to-Nyquist range.
+
+A large sidebar state sign is green from the `trialstart` trigger (20) up to
+the `trialstop` trigger (30), and red during ITIs. FFT bin spacing may be made
+finer with zero-padding, but the true frequency resolution remains
+`1 / FFT duration`.
+
+Python dependencies are `numpy`, `scipy`, `mne`, `pyqtgraph`, `PyQt5`, and
+optionally `mlx` for Apple Metal FFTs. GDF loading/resampling and FFT
+computation run on separate background workers. On macOS, pyqtgraph uses an
+OpenGL viewport with antialiasing disabled, clipped curves, automatic display
+downsampling, and thinner pens. The FFT backend can be Auto, Metal GPU (MLX),
+or multicore CPU (SciPy). Auto benchmarks a synchronized FFT once and keeps
+the faster backend; on the tested M1 Pro the CPU wins for the viewer's small
+channel windows, while OpenGL still uses the GPU for the heavier rendering
+work. Set `GDF_VIEWER_DISABLE_OPENGL=1` before launch to use software
+rendering if a particular macOS/Qt configuration has an OpenGL problem.
 
 ## Neurofeedback variant (`gameNF.m`)
 
