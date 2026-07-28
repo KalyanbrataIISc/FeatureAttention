@@ -4,7 +4,7 @@ Right now what we have is just a skeleton of a task design (experiment) with som
 Here is the task for you:
 There are two flocks of ‘leaves’. The shape of the leaves are round end in one side and pointy end on the other side. For each flock of leaves, they point and move on the same direction. But the direction of movement and pointing are independent. Each flock of leaves moves in one direction and point in one direction. The directions are cardinal i.e. up, down, left or right. While the trial is running, both the flocks are present (moving and pointing) and do not change their directions. No two leaves should collide. To make sure of this, make the leaves behave like RDK dots, appear and disappear, and no path should collide.
 The participant’s task will be based on some cue. The cue can be colour 1 (c1) or colour 2 (c2) each pointing towards one flock of leaves in particular. This is important: if the cue is c1, participant press the cedrus button towards the ‘pointing direction’ of that c1flock; if the cue is c2, participant press on the ‘moving direction’ of the c2 flock. This c1 and c2 and their meaning remains constant throughout the experiment for the participant.
-Before the cue onset, the colour of all the leaves remain the same (the middle colour between c1 and c2, not white of grey)), but immediately along with cue, they get their respective colour. The cue onset timing is determined like this: first there will be a constant interval of say 1 s. Then after that there will be another interval chosen from an exponential distribution (to keep the hazard function as uniform as possible). After that the cue will onset.
+Before the cue onset, the colour of all the leaves remain the same (the middle colour between c1 and c2, not white of grey), but immediately along with cue, they get their respective colour. The cue onset timing is determined like this: first there will be a constant interval of say 1 s. Then after that there will be another interval chosen from an exponential distribution (to keep the hazard function as uniform as possible). After that the cue will onset.
 After response is given the trial do not end immediately. It shows green ‘Correct’ or red ‘Incorrect’ on top based on the response for 1 s. But the leaves keep moving that time too. Then trial is ended. These will also be a 4 s timeout trial end after cue onset, if no response is given in that time.
 If played on mac, there will be no eye tracking, no trigger sending and instead of cedrus, we will use arrow keys. If on windows everything works.
 In triggering, we will send trial start, cue onset, response and trial end. 
@@ -56,3 +56,12 @@ Okay, here we are using two SSVEP frequencies. One is 17Hz and another is 20Hz. 
 Do not touch data folder, let it be as it is. Do not change anything outside of this project.
 And do one thing, for each file where it is needed for the values of frequency; keep it as easily changable parameter near the begining section of the code. Other than this do not try to change any logic, method or style of the codes.
 God speed brother!
+
+---
+
+Instead of mapping the corresponding neurofeedback values directly control the colour contrast, we have to take some kind of average effect over a time window. This is because, neurofeedback on SSVEP is very flickery. In @gameNFv4.m what we would add more and change are as following:
+ 1. We will have a running 2s window which will have all the corresponding NF values of that trial from trial start.
+ 2. We will count the proportion of the NF values which are above a set threshold (parameterised, say 0.2 for now) in that running 2s window.
+ 3. Here also we will have a proportion threshold, say for now 60%. We will linearly map the top 40% to the colour contrast.
+
+ Tell me what you understood, and how you are going to implement first. Then upon aproval you will edit this copy. DO not edit any other files. 
