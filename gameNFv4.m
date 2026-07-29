@@ -300,8 +300,8 @@ nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP pow
 % correct even when the external process's write cadence jitters.
 %
 % The trade this buys - smoothness at the cost of latency - is set by these
-% three numbers: at 2.0s/0.20 the participant needs ~1.2s of sustained
-% above-threshold NF before any color appears at all, and the full 2.0s
+% three numbers: at 1.0s/0.80 the participant needs ~0.6s of sustained
+% above-threshold NF before any color appears at all, and the full 1.0s
 % above threshold to reach fully-saturated color. Retune here.
 %
 % The window starts each trial pre-filled with zeros and is therefore
@@ -312,8 +312,8 @@ nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP pow
 % generally would make the statistic wildly noisy until nfWindowSec had
 % elapsed. Pre-filled zeros count as below-threshold failures instead, so
 % color can only ever appear after a genuinely sustained run of successes
-% - a minimum of (1 - nfProportionThreshold) * nfWindowSec = 1.2s from
-% trial start, and the full 2.0s for saturation, no matter how short that
+% - a minimum of (1 - nfProportionThreshold) * nfWindowSec = 0.6s from
+% trial start, and the full 1.0s for saturation, no matter how short that
 % trial's pre-cue period happens to be.
 %
 % The window then keeps filling from trial start (not cue onset), so it's
@@ -321,9 +321,9 @@ nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP pow
 % there's no ramp-up dead time at cue onset. RT_acquisition_8 zeroes
 % nf.txt at trial start, so the earliest pre-cue samples read ~0 anyway
 % and agree with the pre-filled zeros they replace.
-nfWindowSec           = 2.000;  % trailing window the proportion is computed over
-nfValueThreshold      = 0.2;    % an NF value must exceed this to count as a success
-nfProportionThreshold = 0.20;   % proportion of the window that must be successes before ANY color is revealed
+nfWindowSec           = 1.000;  % trailing window the proportion is computed over
+nfValueThreshold      = 0.001;    % an NF value must exceed this to count as a success
+nfProportionThreshold = 0.80;   % proportion of the window that must be successes before ANY color is revealed
 
 % The fixed cue-onset reveal (and the live-NF reveal growth on top of it)
 % is calibrated in CIELAB Delta E - perceived color difference - rather
