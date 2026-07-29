@@ -5,8 +5,8 @@ experiment room, so gameNF.m/gameNFv2.m can be exercised on mac without real
 EEG hardware.
 
 nf.txt format (matches RT_acquisition_8.m): 3 little-endian doubles
-    [SMI_23gt29, SMI_29gt23, sampleCount]
-gameNF.m/gameNFv2.m read SMI_23gt29 / SMI_29gt23 (1-based indices 1/2), so
+    [SMI_19gt23, SMI_23gt19, sampleCount]
+gameNF.m/gameNFv2.m read SMI_19gt23 / SMI_23gt19 (1-based indices 1/2), so
 those two are what actually drive the leaf color. (Older versions of this
 format had 5 elements with an AMI/alpha-lateralisation pair at indices 1/2
 that the game never read - that pair has since been dropped on the

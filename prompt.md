@@ -1,4 +1,4 @@
-THIS FILE IS NOT FOR ANY AI AGENT TO READ!!!!!!!
+THIS FILE IS NOT FOR ANY AI AGENT TO READ OR WRITE!!!!!!!
 
 Right now what we have is just a skeleton of a task design (experiment) with some AI slop things in trial. We have to design a new task while keeping the basic setup the same. By basic setup, I mean cedrus, cog_send_triggers, psychtoolbox, frame rate based timing, csv recording…
 Here is the task for you:
@@ -64,4 +64,12 @@ Instead of mapping the corresponding neurofeedback values directly control the c
  2. We will count the proportion of the NF values which are above a set threshold (parameterised, say 0.2 for now) in that running 2s window.
  3. Here also we will have a proportion threshold, say for now 60%. We will linearly map the top 40% to the colour contrast.
 
- Tell me what you understood, and how you are going to implement first. Then upon aproval you will edit this copy. DO not edit any other files. 
+ Tell me what you understood, and how you are going to implement first. Then upon aproval you will edit this copy. DO not edit any other files.
+
+ ---
+
+ We will now change the game mechanics here. All the following changes are only to be made on the @gameNFv5.m and not any other file or version (except the markdown files).
+ The neurofeedback remains same but the game cue and objective changes.
+ CUE:
+ The cue will now not be a colour, but a direction and a feature. Suppose, c1 is moving in d1 and pointing at d2, and c2 is moving on d3 and pointing at d4. There can 4 possible cues (all must occur as uniform as possible) moving d1, moving d3, pointing d2 and pointing d4. This will always cue the participant toards one of the two goups. And the participant have to report the colour in cedrus, (left button = orange, right button = blue). All the game mechanics, data logging and nescessary things must be updated accordingly.
+ Before doing it, tell me what you understand, ask if any doubt, and your plan of implementation. Then I will aprove, and you can implement it.

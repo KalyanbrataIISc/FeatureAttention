@@ -5,7 +5,7 @@ function drawPaddle(window, paddleRect, gratingWidthPx, gratingBarWidthPx, ...
 %
 %   [ left grating | inert middle | right grating ]
 %
-% The left grating flickers at the 23 Hz tag, the right at 29 Hz, and the
+% The left grating flickers at the 19 Hz tag, the right at 23 Hz, and the
 % middle strip deliberately does not flicker at all. The two gratings are the
 % task's entire SSVEP stimulus: they drive the response the real-time
 % acquisition picks up, and the lateralisation of that response is what moves

@@ -1,4 +1,4 @@
-function [nf23, nf29, readOk] = readNfPair(pathToNF, nfIndex23, nfIndex29)
+function [nf19, nf23, readOk] = readNfPair(pathToNF, nfIndex19, nfIndex23)
 % readNfPair  Reads *both* SSVEP-lateralisation values out of the binary NF
 % file in a single fopen/fread/fclose.
 %
@@ -11,7 +11,7 @@ function [nf23, nf29, readOk] = readNfPair(pathToNF, nfIndex23, nfIndex29)
 %
 % nf.txt is written externally by the real-time acquisition process
 % (RT_files/RT_acquisition_8.m) as a 3-element double vector
-% [SMI_23gt29, SMI_29gt23, sampleCount], via fopen(...,'w') - which truncates
+% [SMI_19gt23, SMI_23gt19, sampleCount], via fopen(...,'w') - which truncates
 % the file to empty - then fwrite then fclose, roughly every 100 ms.
 %
 % readOk is false when the file could not be opened, or was caught mid-write
@@ -21,8 +21,8 @@ function [nf23, nf29, readOk] = readNfPair(pathToNF, nfIndex23, nfIndex29)
 % failed read as a real measurement of 0, otherwise the paddle would jerk to
 % a halt every time a read lost the race.
 
+    nf19 = 0;
     nf23 = 0;
-    nf29 = 0;
     readOk = false;
 
     fid = fopen(pathToNF, 'r');
@@ -32,9 +32,9 @@ function [nf23, nf29, readOk] = readNfPair(pathToNF, nfIndex23, nfIndex29)
     temp = fread(fid, 'double');
     fclose(fid);
 
-    if numel(temp) >= max(nfIndex23, nfIndex29)
+    if numel(temp) >= max(nfIndex19, nfIndex23)
+        nf19 = temp(nfIndex19);
         nf23 = temp(nfIndex23);
-        nf29 = temp(nfIndex29);
         readOk = true;
     end
 end

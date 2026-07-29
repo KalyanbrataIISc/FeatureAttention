@@ -235,8 +235,8 @@ colorBorderLow  = black;  % SSVEP flicker low-luminance border color
 colorBorderHigh = round(white/2);  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
-freqC1Hz = 23;
-freqC2Hz = 29;
+freqC1Hz = 19;
+freqC2Hz = 23;
 
 % =================== NEUROFEEDBACK (SSVEP lateralisation) ===================
 % The NF stimulus is the leaf fill color itself. Before cue onset, and at
@@ -262,8 +262,8 @@ freqC2Hz = 29;
 % cadence - reading on our own fixed 100ms clock could be out of phase with
 % that and add up to ~100ms of pure latency for no reason.
 %
-% nf.txt is a 3-element double vector [SMI_23gt29, SMI_29gt23,
-% sampleCount] - the 23Hz-vs-29Hz SSVEP power separation this task's NF
+% nf.txt is a 3-element double vector [SMI_19gt23, SMI_23gt19,
+% sampleCount] - the 19Hz-vs-23Hz SSVEP power separation this task's NF
 % reflects, now computed from all electrodes for both frequencies (see
 % RT_acquisition_8.m). Previously 5 elements with an AMI/alpha
 % lateralisation pair at indices 1/2 - that alpha-based feedback was never
@@ -274,8 +274,8 @@ freqC2Hz = 29;
 % loop starts), since the cue itself never changes mid-trial.
 nfFilePath          = fullfile(experimentRoot, 'nf.txt');
 nfTraceLogIntervalSec = 0.100;  % NF trace CSV is still logged only this often (not every frame) to keep the file a sane size
-nfIndexC1           = 1;      % nf.txt column: positive when 23Hz (c1) SSVEP power exceeds 29Hz
-nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP power exceeds 23Hz
+nfIndexC1           = 1;      % nf.txt column: positive when 19Hz (c1) SSVEP power exceeds 23Hz
+nfIndexC2           = 2;      % nf.txt column: positive when 23Hz (c2) SSVEP power exceeds 19Hz
 
 % v4: the leaf fill is NOT driven by the instantaneous NF value. Raw SSVEP
 % lateralisation is very flickery on a ~100ms cadence, so mapping it
@@ -300,9 +300,18 @@ nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP pow
 % correct even when the external process's write cadence jitters.
 %
 % The trade this buys - smoothness at the cost of latency - is set by these
-% three numbers: at 1.0s/0.80 the participant needs ~0.6s of sustained
-% above-threshold NF before any color appears at all, and the full 1.0s
-% above threshold to reach fully-saturated color. Retune here.
+% three numbers, and the latencies they imply follow directly:
+%   first color   = nfProportionThreshold * nfWindowSec       (0.8s here)
+%   full color    = nfWindowSec                               (1.0s here)
+%   back to grey  = (1 - nfProportionThreshold) * nfWindowSec (0.2s here)
+% i.e. success has to be *earned* over most of a window, but is lost again
+% quickly - raising nfProportionThreshold sharpens both. Retune here.
+%
+% nfValueThreshold at 0.001 is deliberately just-above-zero: a sample counts
+% as a success if the lateralisation favours the cued frequency *at all*.
+% The statistic is therefore effectively a sign test - "what fraction of the
+% last nfWindowSec did SSVEP lean the right way" - rather than a test of how
+% strongly it leaned. Raise it to demand a minimum magnitude too.
 %
 % The window starts each trial pre-filled with zeros and is therefore
 % always exactly nfWindowFrames long - the proportion's denominator never
@@ -312,9 +321,9 @@ nfIndexC2           = 2;      % nf.txt column: positive when 29Hz (c2) SSVEP pow
 % generally would make the statistic wildly noisy until nfWindowSec had
 % elapsed. Pre-filled zeros count as below-threshold failures instead, so
 % color can only ever appear after a genuinely sustained run of successes
-% - a minimum of (1 - nfProportionThreshold) * nfWindowSec = 0.6s from
-% trial start, and the full 1.0s for saturation, no matter how short that
-% trial's pre-cue period happens to be.
+% - a minimum of nfProportionThreshold * nfWindowSec = 0.8s from trial
+% start, and the full 1.0s for saturation, no matter how short that trial's
+% pre-cue period happens to be.
 %
 % The window then keeps filling from trial start (not cue onset), so it's
 % already carrying real data by the time the color is first shown and

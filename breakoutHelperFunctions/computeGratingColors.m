@@ -15,7 +15,7 @@ function [barColorA, barColorB] = computeGratingColors(t, freqHz, midColor, barC
 % appears and disappears once per cycle, and the flicker fundamental is
 % exactly freqHz. This matters: a contrast-*reversing* grating (bars swapping
 % polarity) would put its dominant response at 2*freqHz instead, which would
-% not line up with the 23/29 Hz bins the real-time acquisition and the paddle
+% not line up with the 19/23 Hz bins the real-time acquisition and the paddle
 % control law are built around.
 %
 % Derive t from real Screen('Flip') VBL timestamps, not from a frame counter.

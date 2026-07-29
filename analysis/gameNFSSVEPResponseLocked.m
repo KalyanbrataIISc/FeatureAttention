@@ -14,7 +14,7 @@ clc;
 %
 %     log(power at target frequency / mean(power at adjacent frequency bins))
 %
-% separately for 23Hz and 29Hz. No pre-cue baseline subtraction and no
+% separately for 19Hz and 23Hz. No pre-cue baseline subtraction and no
 % per-trial cue/response zeroing are applied. The plot helper aligns raw
 % trial series to response, averages across trials within each cue, and
 % zeroes only the final averaged trace to its own value at response
@@ -38,8 +38,8 @@ clc;
 participantNums = [63];
 faDataRoot = '/Volumes/250GBKC/FAData';
 % SSVEP tagging frequencies.
-freqC1Hz = 17;
-freqC2Hz = 19;
+freqC1Hz = 19;
+freqC2Hz = 23;
 
 % Plotting scope: 'combined', 'individual', or 'both'.
 plotMode = 'both';

@@ -8,16 +8,18 @@ This repository is a MATLAB/PsychToolbox feature-attention and SSVEP experiment.
 
 There is no build step. Run scripts from MATLAB with the repository as the working folder.
 
-- `gamev1` runs the base task.
-- `gameNFv3` runs the current neurofeedback variant.
-- `checkcode gamev1.m helperFunctions/updateLeaves.m` runs MATLAB static analysis on changed files.
+- `gameNFv5` runs the current variant: same windowed neurofeedback as `gameNFv4`, but the cue is a feature + direction (e.g. "MOVING UP") and the participant reports the cued flock's colour with two buttons (left = orange = c2, right = blue = c1). See `README.md`.
+- `gameNFv4` runs the previous variant, cued by colour and answered with a direction, with the leaf color driven by a windowed sustained-success statistic over `nf.txt` rather than by its instantaneous value (`nfWindowSec`/`nfValueThreshold`/`nfProportionThreshold` in its `%% PARAMETERS` block).
+- `gameNFv3` runs the variant before that, identical to `gameNFv4` except that the leaf color follows the instantaneous `nf.txt` value.
+- `legacy/gamev1.m` is the original base task, superseded and no longer run.
+- `checkcode gameNFv5.m helperFunctions/updateLeaves.m` runs MATLAB static analysis on changed files.
 - `addpath(genpath(pwd))` can be used in MATLAB before calling helper functions interactively.
 
 PsychToolbox display, keyboard/Cedrus, and trigger behavior require interactive MATLAB; they cannot be fully verified headlessly.
 
 ## Coding Style & Naming Conventions
 
-Use MATLAB idioms already present in the repo: 4-space indentation, descriptive `camelCase` names, and one public function per file. Keep script-level tunables in the script `%% PARAMETERS` block. The lab MATLAB version does not support local functions inside scripts, so add new helpers in `helperFunctions/` instead of appending local functions to `gamev1.m` or `gameNF*.m`. Prefer small helpers for pure logic and keep PsychToolbox/Cedrus side effects isolated.
+Use MATLAB idioms already present in the repo: 4-space indentation, descriptive `camelCase` names, and one public function per file. Keep script-level tunables in the script `%% PARAMETERS` block. The lab MATLAB version does not support local functions inside scripts, so add new helpers in `helperFunctions/` instead of appending local functions to `gameNF*.m` or any other experiment script. Prefer small helpers for pure logic and keep PsychToolbox/Cedrus side effects isolated.
 
 ## Testing Guidelines
 

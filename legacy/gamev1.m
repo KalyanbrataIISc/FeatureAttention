@@ -181,8 +181,8 @@ colorBorderLow  = black;  % SSVEP flicker low-luminance border color
 colorBorderHigh = white;  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
-freqC1Hz = 23;
-freqC2Hz = 29;
+freqC1Hz = 19;
+freqC2Hz = 23;
 
 %% Initialise the screen
 screens = Screen('Screens');

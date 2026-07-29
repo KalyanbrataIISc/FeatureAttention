@@ -53,14 +53,28 @@ csvBaseDir = fullfile(experimentRoot, 'data');
 if ~exist(csvBaseDir, 'dir')
     mkdir(csvBaseDir);
 end
-csvHeader = ['TrialNumber,TrialStart,C1PointDir,C1MoveDir,C2PointDir,C2MoveDir,Cue,CueOnsetTime,' ...
-    'CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout,TrialEnd,DroppedFrameCount'];
+% v5: the cue is a (feature, direction) pair and the response is a COLOR, so
+% CueFeature/CueDirection are new and CorrectResponse/ParticipantResponse now
+% hold 'blue'/'orange' instead of a direction. Cue is kept, still valued
+% 'c1'/'c2' (the flock the cue points at), because that is what selects the
+% attended SSVEP frequency and what the offline analysis scripts group by.
+% ColorRevealTime is the timestamp of the first post-cue frame that actually
+% showed any leaf color - with nfBaselineDeltaE = 0 the response is gated on
+% neurofeedback success, so reaction time is uninterpretable without it.
+csvHeader = ['TrialNumber,TrialStart,C1PointDir,C1MoveDir,C2PointDir,C2MoveDir,Cue,CueFeature,CueDirection,CueOnsetTime,' ...
+    'CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout,TrialEnd,DroppedFrameCount,ColorRevealTime'];
 csvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_trialdata.csv', sessionTag), csvHeader);
 
 % Per-~100ms NF trace (one row per nfTraceLogIntervalSec), separate file so
 % the one-row-per-trial main CSV above stays unchanged in shape.
+% v4: NFWindowProportion/NFDrive record the rolling-window statistic that
+% actually drives the leaf color now (see NEUROFEEDBACK PARAMETERS below);
+% NFValueRaw/NFValueClipped are kept so the underlying raw stream the
+% window was computed from stays auditable offline. There's no window-fill
+% column because the window is pre-filled with zeros at trial start and so
+% is always exactly nfWindowFrames long.
 nfTraceCsvHeader = ['TrialNumber,FrameNumber,SampleTime,NFIndexUsed,' ...
-    'NFValueRaw,NFValueClipped,PostCueOnset,NFReadOk'];
+    'NFValueRaw,NFValueClipped,NFWindowProportion,NFDrive,PostCueOnset,NFReadOk'];
 nfTraceCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_nftrace.csv', sessionTag), nfTraceCsvHeader);
 
 % Dropped/delayed-frame log (v2 only): one row per frame whose Screen('Flip')
@@ -108,17 +122,98 @@ red   = [255 0 0];
 
 %% PARAMETERS
 % Key mappings (used only when running on mac, where no Cedrus box is present)
+% v5: the response is 2-alternative (color), so only left/right are read -
+% the up/down arrow keys gamev1-gameNFv4 needed for their 4-direction
+% response are gone.
 escapeKey = KbName('ESCAPE');
 leftKey   = KbName('LeftArrow');
 rightKey  = KbName('RightArrow');
-upKey     = KbName('UpArrow');
-downKey   = KbName('DownArrow');
 
 % Experiment structure
-trialNumberPerBlock = 20; % keep even so the c1/c2 cue can be balanced 50/50
+trialNumberPerBlock = 24; % ideally a multiple of 24 (see directionTrialList
+% below) so both the cue and every direction combo land exactly uniform;
+% other values (e.g. for a quick test run) still balance as evenly as
+% integer counts allow, just not perfectly.
 directionSet = {'up', 'down', 'left', 'right'};
-cueList = repmat({'c1', 'c2'}, 1, trialNumberPerBlock / 2);
-cueList = cueList(randperm(numel(cueList)));
+
+% v5: the cue is no longer a color naming a flock - it is a (feature,
+% direction) pair, e.g. "MOVING UP", and the participant reports the COLOR
+% of the flock it identifies (left button = orange = c2, right = blue = c1).
+% Because the direction scheme below makes (c1PointDir, c1MoveDir,
+% c2PointDir, c2MoveDir) a permutation of all four directions, exactly four
+% cues are possible on any given trial - moving c1MoveDir, moving c2MoveDir,
+% pointing c1PointDir, pointing c2PointDir - and each identifies exactly one
+% flock. Note that this also means the cued direction alone is already
+% unique: the feature word tells the participant which dimension to search
+% rather than disambiguating two candidate flocks.
+%
+% The four cue types are consumed as shuffled 4-trial cycles (same idea as
+% directionTrialList's 24-trial cycles below), so all four types - and hence
+% both features and both cued flocks/correct colors - occur equally often at
+% every 4-trial boundary, not merely across the whole block.
+cueTypeFeatures = {'moving', 'moving', 'pointing', 'pointing'};
+cueTypeFlocks   = {'c1',     'c2',     'c1',       'c2'};
+numCueTypes = numel(cueTypeFeatures);
+cueFeatureList = cell(1, trialNumberPerBlock);
+cueFlockList   = cell(1, trialNumberPerBlock);
+numFullCueCycles = floor(trialNumberPerBlock / numCueTypes);
+numLeftoverCueTrials = trialNumberPerBlock - numFullCueCycles * numCueTypes;
+cueCursor = 1;
+for cueCycle = 1:numFullCueCycles
+    cycleOrder = randperm(numCueTypes);
+    cueFeatureList(cueCursor:cueCursor + numCueTypes - 1) = cueTypeFeatures(cycleOrder);
+    cueFlockList(cueCursor:cueCursor + numCueTypes - 1)   = cueTypeFlocks(cycleOrder);
+    cueCursor = cueCursor + numCueTypes;
+end
+if numLeftoverCueTrials > 0
+    leftoverCueIdx = randperm(numCueTypes, numLeftoverCueTrials);
+    cueFeatureList(cueCursor:end) = cueTypeFeatures(leftoverCueIdx);
+    cueFlockList(cueCursor:end)   = cueTypeFlocks(leftoverCueIdx);
+end
+
+% v3: flock 1's pointing/moving directions are always different from each
+% other, and flock 2 always takes the two leftover directions (also
+% different from each other) - one for pointing, one for moving. That
+% yields exactly 4*3*2 = 24 distinct (c1PointDir, c1MoveDir, c2PointDir,
+% c2MoveDir) combinations; directionCombos enumerates all of them.
+directionCombos = cell(24, 4);
+comboIdx = 1;
+for c1PointIdx = 1:4
+    for c1MoveIdx = 1:4
+        if c1MoveIdx == c1PointIdx
+            continue;
+        end
+        remainingIdx = setdiff(1:4, [c1PointIdx c1MoveIdx]);
+        for swap = 0:1
+            c2PointIdx = remainingIdx(1 + swap);
+            c2MoveIdx  = remainingIdx(2 - swap);
+            directionCombos(comboIdx, :) = directionSet([c1PointIdx c1MoveIdx c2PointIdx c2MoveIdx]);
+            comboIdx = comboIdx + 1;
+        end
+    end
+end
+
+% Fill directionTrialList with directionCombos repeated/shuffled one full
+% 24-combo cycle at a time, so every combination is used equally often
+% (uniform) while the trial order stays random, even for prefixes of the
+% block at each 24-trial boundary. If trialNumberPerBlock isn't an exact
+% multiple of 24 (e.g. a short test run), the leftover trials get a random
+% subset of distinct combos - no combo repeats within that leftover partial
+% cycle, so coverage stays as uniform as the trial count allows.
+numDirectionCombos = size(directionCombos, 1);
+numFullDirectionCycles = floor(trialNumberPerBlock / numDirectionCombos);
+numLeftoverDirectionTrials = trialNumberPerBlock - numFullDirectionCycles * numDirectionCombos;
+directionTrialList = cell(trialNumberPerBlock, 4);
+rowCursor = 1;
+for cycle = 1:numFullDirectionCycles
+    directionTrialList(rowCursor:rowCursor + numDirectionCombos - 1, :) = ...
+        directionCombos(randperm(numDirectionCombos), :);
+    rowCursor = rowCursor + numDirectionCombos;
+end
+if numLeftoverDirectionTrials > 0
+    leftoverComboIdx = randperm(numDirectionCombos, numLeftoverDirectionTrials);
+    directionTrialList(rowCursor:end, :) = directionCombos(leftoverComboIdx, :);
+end
 
 % Timing in seconds, converted to frames after the measured refresh rate is known
 preCueConstantSec   = 1.000;  % fixed foreperiod before the hazard-uniform jitter
@@ -158,15 +253,37 @@ numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^
 % starts thrashing past ~30/flock - raise gradually and watch for that
 % symptom coming back.
 
-% Cue rectangle (same object throughout the trial: neutral/black pre-cue,
-% solid colorC1/colorC2 with 'Pointing'/'Moving' written inside from cue
-% onset on, switching to the 'Correct'/'Incorrect' feedback text - in the
-% same box - once a response is given)
-cueRectWidthPx       = 220;
-cueRectHeightPx      = 90;
+% Cue rectangle (same object throughout the trial: black pre-cue, then dark
+% green from cue onset on with the two-line cue - feature above direction,
+% e.g. 'MOVING' / 'UP' - written inside it in white, switching to the
+% 'Correct'/'Incorrect' feedback text in the same box once a response is
+% given).
+% v5: the box is deliberately NOT filled with the cued flock's color any
+% more - the flock's color is the answer now, so coloring the box would give
+% it away. It is a fixed dark green for every trial instead - neutral with
+% respect to both flock colors, and a much smaller luminance step from the
+% black pre-cue box than a white box would be, which matters for a
+% fixation-centred stimulus in an SSVEP recording. The box is also bigger
+% than gameNFv4.m's, to fit two lines of text.
+cueRectWidthPx       = 280;
+cueRectHeightPx      = 120;
 cueRectCornerRadiusPx = 20;
 cueTextSize          = 32;
-colorCueText         = black;
+colorCueText         = white;
+colorCueRectPreCue   = black;
+colorCueRectPostCue  = [0 100 0];
+
+% v5 response mapping - fixed for the whole experiment, and spelled out on
+% the instructions screen. Cedrus Left (button 3) / left arrow = orange =
+% flock c2; Cedrus Right (button 5) / right arrow = blue = flock c1.
+responseLabelC1 = 'blue';    % colorC1 (deep sky blue), reported with the RIGHT button
+responseLabelC2 = 'orange';  % colorC2 (dark orange), reported with the LEFT button
+
+% Feedback text colors. Lighter than the plain green/red above because the
+% feedback is drawn inside the dark green cue box - plain green would be
+% near-invisible on it and plain red is low-contrast against it.
+colorFeedbackCorrect   = [170 255 170];
+colorFeedbackIncorrect = [255 150 150];
 
 % Instructions screen (shown once, before the block starts)
 instructionsTextSize = 25;
@@ -174,10 +291,10 @@ instructionsTextSize = 25;
 % Colors
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
 colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
-SSVEPContrastGap = 150;
-shiftValue = round((255 - 100)/2);
-colorBorderLow  = black + shiftValue;  % SSVEP flicker low-luminance border color
-colorBorderHigh = white - shiftValue;  % SSVEP flicker high-luminance border color
+% SSVEPContrastGap = 150;
+% shiftValue = round((255 - 100)/2);
+colorBorderLow  = black;  % SSVEP flicker low-luminance border color
+colorBorderHigh = round(white/2);  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
 freqC1Hz = 19;
@@ -195,13 +312,20 @@ freqC2Hz = 23;
 % cued frequency - i.e. the leaves become more distinctly colored the more
 % the participant's SSVEP is lateralised the right way.
 %
-% Right at cue onset, a small fixed baseline reveal is applied regardless
-% of the live NF value - a deliberate, immediate, subtle glimpse of each
-% flock's true color so the participant can tell the two flocks apart and
-% knows where to start attending, rather than waiting on their own
-% not-yet-achieved correct lateralisation to reveal it. This is driven
-% purely off nf.txt (written externally by RT_acquisition_8) - no
-% moving-average window is applied here, unlike that prior experiment.
+% v5: that fill color is now also the thing the participant reports, so the
+% neurofeedback and the task objective are deliberately the same quantity -
+% with nfBaselineDeltaE = 0 (below) there is NO fixed cue-onset reveal, and
+% since the two flocks are otherwise identical apart from their directions
+% and their 19/23Hz border flicker, the trial simply cannot be answered
+% until sustained correct lateralisation has revealed the colors. A trial
+% where that never happens ends as a guess or a timeout by design. Raise
+% nfBaselineDeltaE above 0 to make the colors faintly visible from cue onset
+% instead (a deliberate, subtle glimpse of each flock's true color that the
+% live NF then grows on top of), which makes every trial answerable but
+% removes that gating.
+%
+% All of it is driven purely off nf.txt (written externally by
+% RT_acquisition_8), through the trailing window described under v4 below.
 % nf.txt is re-read fresh every displayed frame (not held between reads),
 % since it's only the file's own external rewrite that happens on a ~100ms
 % cadence - reading on our own fixed 100ms clock could be out of phase with
@@ -222,12 +346,72 @@ nfTraceLogIntervalSec = 0.100;  % NF trace CSV is still logged only this often (
 nfIndexC1           = 1;      % nf.txt column: positive when 19Hz (c1) SSVEP power exceeds 23Hz
 nfIndexC2           = 2;      % nf.txt column: positive when 23Hz (c2) SSVEP power exceeds 19Hz
 
+% v4: the leaf fill is NOT driven by the instantaneous NF value. Raw SSVEP
+% lateralisation is very flickery on a ~100ms cadence, so mapping it
+% directly onto color made the leaves visibly jitter. Instead the color is
+% driven by a *sustained-success* statistic over a trailing window:
+%
+%   1. every displayed frame's NF value goes into a rolling nfWindowSec
+%      window, re-zeroed at each trial start;
+%   2. nfAboveProportion = fraction of that window strictly above
+%      nfValueThreshold - i.e. the proportion of the last nfWindowSec of
+%      *time* the participant held a good-enough lateralisation;
+%   3. that proportion is thresholded and rescaled: at or below
+%      nfProportionThreshold the drive is 0 (leaves stay at the fixed
+%      cue-onset reveal), and the remaining top slice
+%      [nfProportionThreshold, 1] maps linearly onto drive [0, 1], which
+%      is what computeNfLeafColor now receives in place of the raw value.
+%
+% Sampling per displayed frame rather than once per new nf.txt write is
+% deliberate: nf.txt only changes every ~100ms, so consecutive frames
+% repeat the same value ~6 times over, which is exactly what makes the
+% proportion a proportion of elapsed time rather than of samples - it stays
+% correct even when the external process's write cadence jitters.
+%
+% The trade this buys - smoothness at the cost of latency - is set by these
+% three numbers, and the latencies they imply follow directly:
+%   first color   = nfProportionThreshold * nfWindowSec       (0.8s here)
+%   full color    = nfWindowSec                               (1.0s here)
+%   back to grey  = (1 - nfProportionThreshold) * nfWindowSec (0.2s here)
+% i.e. success has to be *earned* over most of a window, but is lost again
+% quickly - raising nfProportionThreshold sharpens both. Retune here.
+%
+% nfValueThreshold at 0.001 is deliberately just-above-zero: a sample counts
+% as a success if the lateralisation favours the cued frequency *at all*.
+% The statistic is therefore effectively a sign test - "what fraction of the
+% last nfWindowSec did SSVEP lean the right way" - rather than a test of how
+% strongly it leaned. Raise it to demand a minimum magnitude too.
+%
+% The window starts each trial pre-filled with zeros and is therefore
+% always exactly nfWindowFrames long - the proportion's denominator never
+% changes. This matters at the start of a trial: a window sized to only
+% the samples collected so far would let one lucky above-threshold sample
+% on frame 1 read as a proportion of 1.0 and drive full color, and more
+% generally would make the statistic wildly noisy until nfWindowSec had
+% elapsed. Pre-filled zeros count as below-threshold failures instead, so
+% color can only ever appear after a genuinely sustained run of successes
+% - a minimum of nfProportionThreshold * nfWindowSec = 0.8s from trial
+% start, and the full 1.0s for saturation, no matter how short that trial's
+% pre-cue period happens to be.
+%
+% The window then keeps filling from trial start (not cue onset), so it's
+% already carrying real data by the time the color is first shown and
+% there's no ramp-up dead time at cue onset. RT_acquisition_8 zeroes
+% nf.txt at trial start, so the earliest pre-cue samples read ~0 anyway
+% and agree with the pre-filled zeros they replace.
+nfWindowSec           = 1.000;  % trailing window the proportion is computed over
+nfValueThreshold      = 0.001;    % an NF value must exceed this to count as a success
+nfProportionThreshold = 0.80;   % proportion of the window that must be successes before ANY color is revealed
+
 % The fixed cue-onset reveal (and the live-NF reveal growth on top of it)
 % is calibrated in CIELAB Delta E - perceived color difference - rather
 % than a raw RGB blend fraction: a rig test showed the same blend fraction
 % looked clearly more intense for one flock's color than the other's,
 % since equal RGB distance is not equal *perceived* distance across
 % different hues. See helperFunctions/computeNfLeafColor.m.
+% v5 keeps this at 0 on purpose: the leaf color is the response, so any
+% fixed reveal here would hand the participant the answer for free and
+% un-gate the task from the neurofeedback (see the block above).
 nfBaselineDeltaE = 0;  % target CIELAB Delta E for the fixed cue-onset reveal - both flocks match exactly
 labGrey = srgb2lab(grey);
 labC1   = srgb2lab(colorC1);
@@ -253,7 +437,7 @@ cueRect = [xCenter - cueRectWidthPx / 2, yCenter - cueRectHeightPx / 2, ...
            xCenter + cueRectWidthPx / 2, yCenter + cueRectHeightPx / 2];
 
 Screen('FillRect', window, grey);
-drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
 Screen('Flip', window);
 WaitSecs(1);
 
@@ -273,6 +457,11 @@ feedbackFrames = max(1, round(feedbackDurationSec / interFrameInterval));
 itiFrames = max(1, round(itiDurationSec / interFrameInterval));
 leafLifetimeFrames = max(1, round(leafLifetimeSec / interFrameInterval));
 nfTraceLogIntervalFrames = max(1, round(nfTraceLogIntervalSec / interFrameInterval));
+nfWindowFrames = max(1, round(nfWindowSec / interFrameInterval));
+% Denominator of the proportion->drive rescale, computed once. max(eps, ...)
+% keeps a (degenerate) nfProportionThreshold of 1 from dividing by zero -
+% it then just means "only a perfect window reveals anything".
+nfProportionSpan = max(eps, 1 - nfProportionThreshold);
 
 % Per-frame speed, and the leaf field rect (needs interFrameInterval/windowRect, known only now)
 leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
@@ -293,10 +482,13 @@ try
     demoInnerShape = createLeafShape(demoLeafPointDir, leafLengthPx, leafWidthPx);
     demoOuterShape = createLeafShape(demoLeafPointDir, leafLengthPx + 2 * leafBorderThicknessPx, leafWidthPx + 2 * leafBorderThicknessPx);
 
+    % v5: the demo leaves illustrate the color -> button mapping, so the
+    % orange (c2) example sits on the left and the blue (c1) one on the
+    % right, matching the buttons they are reported with.
     demoOffsetX = (windowRect(3) - windowRect(1)) * 0.22;
     demoY = yCenter + 60;
-    demoPosC1 = [xCenter - demoOffsetX, demoY];
-    demoPosC2 = [xCenter + demoOffsetX, demoY];
+    demoPosC2 = [xCenter - demoOffsetX, demoY];
+    demoPosC1 = [xCenter + demoOffsetX, demoY];
 
     labelWidthPx = 320;
     labelHeightPx = 90;
@@ -309,12 +501,14 @@ try
     instructionsText = [ ...
         'INSTRUCTIONS\n\n' ...
         'Two groups of leaves move around the screen. Each group points in one\n' ...
-        'direction and moves in another direction (up / down / left / right) -\n' ...
-        'independently, and both can change from trial to trial.\n\n' ...
-        'At first the leaves are a neutral color. Partway through each trial, the\n' ...
-        'box at the center turns a color and shows "Pointing" or "Moving" - see\n' ...
-        'the two examples below for what each color means.\n\n' ...
-        'Respond as fast and accurately as you can with the direction buttons.\n' ...
+        'direction and moves in another direction, and all four directions are\n' ...
+        'different (up / down / left / right). They change from trial to trial.\n\n' ...
+        'Partway through each trial the box at the center names one feature and\n' ...
+        'one direction, e.g. "MOVING" above "UP" - meaning the group that is\n' ...
+        'moving upward. Find that group and report ITS COLOR with the buttons\n' ...
+        'shown below.\n\n' ...
+        'The leaves stay blank until your attention on the cued group brings out\n' ...
+        'their color, so hold your attention there until the color appears.\n' ...
         'The box will then show whether you were Correct or Incorrect.'];
 
     Screen('FillRect', window, grey);
@@ -327,8 +521,8 @@ try
     Screen('FillPoly', window, colorC2, bsxfun(@plus, demoInnerShape, demoPosC2));
 
     Screen('TextSize', window, 22);
-    DrawFormattedText(window, 'This color ->\nuse its POINTING\ndirection', 'center', 'center', black, [], [], [], [], [], labelC1Rect);
-    DrawFormattedText(window, 'This color ->\nuse its MOVING\ndirection', 'center', 'center', black, [], [], [], [], [], labelC2Rect);
+    DrawFormattedText(window, 'ORANGE\npress the\nLEFT button', 'center', 'center', black, [], [], [], [], [], labelC2Rect);
+    DrawFormattedText(window, 'BLUE\npress the\nRIGHT button', 'center', 'center', black, [], [], [], [], [], labelC1Rect);
 
     Screen('TextSize', window, 28);
     DrawFormattedText(window, 'Press any key or button to begin', 'center', windowRect(4) - 80, black);
@@ -347,27 +541,38 @@ try
         end
 
         %% Trial setup
-        c1PointDir = directionSet{randi(4)};
-        c1MoveDir  = directionSet{randi(4)};
-        c2PointDir = directionSet{randi(4)};
-        c2MoveDir  = directionSet{randi(4)};
-        cue = cueList{trialNumber};
+        c1PointDir = directionTrialList{trialNumber, 1};
+        c1MoveDir  = directionTrialList{trialNumber, 2};
+        c2PointDir = directionTrialList{trialNumber, 3};
+        c2MoveDir  = directionTrialList{trialNumber, 4};
+        % v5: cue = which flock this trial's (feature, direction) pair points
+        % at. It is still 'c1'/'c2' - it is what fixes the attended SSVEP
+        % frequency (and so nfIndex) exactly as before - but the participant
+        % never sees it directly: they see the feature and the direction, and
+        % report the color of the flock those identify.
+        cueFeature = cueFeatureList{trialNumber};
+        cue = cueFlockList{trialNumber};
 
         if strcmp(cue, 'c1')
-            correctResponse = c1PointDir;
-        else
-            correctResponse = c2MoveDir;
-        end
-
-        if strcmp(cue, 'c1')
-            cueColor = colorC1;
-            cueWord = 'Pointing';
+            if strcmp(cueFeature, 'moving')
+                cueDirection = c1MoveDir;
+            else
+                cueDirection = c1PointDir;
+            end
+            correctResponse = responseLabelC1;
             nfIndex = nfIndexC1;
         else
-            cueColor = colorC2;
-            cueWord = 'Moving';
+            if strcmp(cueFeature, 'moving')
+                cueDirection = c2MoveDir;
+            else
+                cueDirection = c2PointDir;
+            end
+            correctResponse = responseLabelC2;
             nfIndex = nfIndexC2;
         end
+
+        % Two lines in the cue box: feature above direction, e.g. 'MOVING' / 'UP'.
+        cueText = sprintf('%s\n%s', upper(cueFeature), upper(cueDirection));
 
         % NF state for this trial (nfIndex above is fixed for the whole
         % trial - predetermined here, before the trial's frame loop starts).
@@ -375,10 +580,23 @@ try
         % frame loop below) - starts at 0 (neutral) same as a real trial
         % start, since RT_acquisition_8 itself zeroes nf.txt at trial start.
         nfCurrentValueRaw = 0;
+
+        % v4: rolling NF window for this trial (see NEUROFEEDBACK PARAMETERS
+        % above). Re-zeroed per trial so nothing bleeds across trials, and
+        % those starting zeros are themselves the trial's initial window
+        % contents - counted as below-threshold failures, never as missing
+        % samples, so the proportion is always over a full nfWindowFrames.
+        nfWindowBuffer = zeros(1, nfWindowFrames);
+        nfWindowCursor = 0;
+        nfAboveProportion = 0;
+        nfDrive = 0;
+
         nfTraceFrameNumber = [];
         nfTraceSampleTime = [];
         nfTraceValueRaw = [];
         nfTraceValueClipped = [];
+        nfTraceWindowProportion = [];
+        nfTraceDrive = [];
         nfTracePostCue = [];
         nfTraceReadOk = [];
 
@@ -408,6 +626,12 @@ try
 
         trialStartTime = getElapsedTime(experimentStartTime);
         cueOnsetTime = NaN;
+        % v5: timestamp of the first post-cue frame that actually displayed
+        % any leaf color (nfDrive > 0). Stays NaN if the participant never
+        % sustained the cued lateralisation long enough - in which case they
+        % had nothing to report from, so reaction time and accuracy for that
+        % trial have to be read against this column.
+        colorRevealTime = NaN;
 
         disp(trialNumber);
         if ~ismac
@@ -453,6 +677,18 @@ try
                 nfCurrentValueRaw = newNfValueRaw;
             end
 
+            % v4: push this frame's value into the rolling window and
+            % recompute the drive. Done every frame regardless of phase (so
+            % the window is already full at cue onset); only the *visual*
+            % use of nfDrive below is gated to post-cue. A stale value from
+            % a failed read is pushed as-is - it's the value that was on
+            % screen for that frame, so counting it is what keeps the
+            % proportion a proportion of elapsed time.
+            nfWindowCursor = mod(nfWindowCursor, nfWindowFrames) + 1;
+            nfWindowBuffer(nfWindowCursor) = nfCurrentValueRaw;
+            nfAboveProportion = sum(nfWindowBuffer > nfValueThreshold) / nfWindowFrames;
+            nfDrive = max(0, (nfAboveProportion - nfProportionThreshold) / nfProportionSpan);
+
             % The trace CSV is still only logged every nfTraceLogIntervalFrames
             % (~100ms), since nf.txt itself is only rewritten externally on
             % roughly that cadence - logging every frame would just repeat
@@ -462,6 +698,8 @@ try
                 nfTraceSampleTime(end+1) = getElapsedTime(experimentStartTime); %#ok<SAGROW>
                 nfTraceValueRaw(end+1) = nfCurrentValueRaw; %#ok<SAGROW>
                 nfTraceValueClipped(end+1) = max(0, min(1, nfCurrentValueRaw)); %#ok<SAGROW>
+                nfTraceWindowProportion(end+1) = nfAboveProportion; %#ok<SAGROW>
+                nfTraceDrive(end+1) = nfDrive; %#ok<SAGROW>
                 nfTraceReadOk(end+1) = nfReadOk; %#ok<SAGROW>
                 nfTracePostCue(end+1) = ~isPreCue; %#ok<SAGROW>
             end
@@ -483,20 +721,26 @@ try
             if isPreCue
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     grey, grey, flock1BorderColor, flock2BorderColor);
-                drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+                drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
             else
-                flock1FillColor = computeNfLeafColor(labGrey, labC1, maxDeltaEC1, nfCurrentValueRaw, nfBaselineDeltaE);
-                flock2FillColor = computeNfLeafColor(labGrey, labC2, maxDeltaEC2, nfCurrentValueRaw, nfBaselineDeltaE);
+                % v4: the color is driven by nfDrive - the windowed
+                % proportion-above-threshold statistic - not by the raw
+                % instantaneous NF value. nfDrive is already in [0, 1], so
+                % computeNfLeafColor's own clip is a no-op here.
+                flock1FillColor = computeNfLeafColor(labGrey, labC1, maxDeltaEC1, nfDrive, nfBaselineDeltaE);
+                flock2FillColor = computeNfLeafColor(labGrey, labC2, maxDeltaEC2, nfDrive, nfBaselineDeltaE);
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     flock1FillColor, flock2FillColor, flock1BorderColor, flock2BorderColor);
-                drawRoundedRect(window, cueColor, cueRect, cueRectCornerRadiusPx);
+                % v5: fixed neutral box - it must not carry the cued flock's
+                % color, since that color is the answer.
+                drawRoundedRect(window, colorCueRectPostCue, cueRect, cueRectCornerRadiusPx);
                 Screen('TextSize', window, cueTextSize);
                 if inFeedback
                     % Response feedback is shown inside the cue box itself, in
-                    % place of the 'Pointing'/'Moving' word, not as separate text.
+                    % place of the two-line cue text, not as separate text.
                     DrawFormattedText(window, feedbackString, 'center', 'center', feedbackColor, [], [], [], [], [], cueRect);
                 else
-                    DrawFormattedText(window, cueWord, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
+                    DrawFormattedText(window, cueText, 'center', 'center', colorCueText, [], [], [], [], [], cueRect);
                 end
             end
 
@@ -523,6 +767,14 @@ try
                 end
             end
 
+            % v5: stamp the moment the leaves first actually showed color -
+            % i.e. the first post-cue frame drawn with nfDrive > 0 - taken
+            % after that frame's flip, like cueOnsetTime, so it refers to
+            % what was displayed rather than what was queued.
+            if ~isPreCue && isnan(colorRevealTime) && nfDrive > 0
+                colorRevealTime = getElapsedTime(experimentStartTime);
+            end
+
             if checkEscape(escapeKey)
                 runBlockLoop = false;
                 break;
@@ -534,12 +786,14 @@ try
                     break;
                 end
             elseif ~isPreCue
+                % v5: 2-alternative color response (left = orange = c2,
+                % right = blue = c1) instead of gameNFv4.m's 4-direction one.
                 if ~ismac
-                    [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                        false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
+                    [validResponse, participantResponse, reactionTime] = getColorResponse( ...
+                        false, cedrus, leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetTime);
                 else
-                    [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                        true, [], leftKey, rightKey, upKey, downKey, cueOnsetTime);
+                    [validResponse, participantResponse, reactionTime] = getColorResponse( ...
+                        true, [], leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetTime);
                 end
 
                 if validResponse
@@ -549,10 +803,10 @@ try
                     end
                     if accuracy
                         feedbackString = 'Correct';
-                        feedbackColor = green;
+                        feedbackColor = colorFeedbackCorrect;
                     else
                         feedbackString = 'Incorrect';
-                        feedbackColor = red;
+                        feedbackColor = colorFeedbackIncorrect;
                     end
                     inFeedback = true;
                     feedbackFramesRemaining = feedbackFrames;
@@ -579,17 +833,20 @@ try
         rtByTrial(trialNumber) = reactionTime;
 
         fid = fopen(csvFile, 'a');
-        fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%.6f,%s,%s,%d,%.6f,%d,%.6f,%d\n', ...
-            trialNumber, trialStartTime, c1PointDir, c1MoveDir, c2PointDir, c2MoveDir, cue, cueOnsetTime, ...
-            correctResponse, participantResponse, accuracy, reactionTime, responseTimeout, trialEndTime, droppedFrameCount);
+        fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%s,%s,%.6f,%s,%s,%d,%.6f,%d,%.6f,%d,%.6f\n', ...
+            trialNumber, trialStartTime, c1PointDir, c1MoveDir, c2PointDir, c2MoveDir, ...
+            cue, cueFeature, cueDirection, cueOnsetTime, ...
+            correctResponse, participantResponse, accuracy, reactionTime, responseTimeout, ...
+            trialEndTime, droppedFrameCount, colorRevealTime);
         fclose(fid);
 
         %% Log NF trace for this trial (one row per ~100ms, per nfTraceLogIntervalSec)
         fid = fopen(nfTraceCsvFile, 'a');
         for r = 1:numel(nfTraceFrameNumber)
-            fprintf(fid, '%d,%d,%.6f,%d,%.6f,%.6f,%d,%d\n', ...
+            fprintf(fid, '%d,%d,%.6f,%d,%.6f,%.6f,%.6f,%.6f,%d,%d\n', ...
                 trialNumber, nfTraceFrameNumber(r), nfTraceSampleTime(r), nfIndex, ...
-                nfTraceValueRaw(r), nfTraceValueClipped(r), nfTracePostCue(r), nfTraceReadOk(r));
+                nfTraceValueRaw(r), nfTraceValueClipped(r), nfTraceWindowProportion(r), ...
+                nfTraceDrive(r), nfTracePostCue(r), nfTraceReadOk(r));
         end
         fclose(fid);
 
@@ -604,7 +861,7 @@ try
         %% ITI
         for currentFrame = 1:itiFrames
             Screen('FillRect', window, grey);
-            drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+            drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
             if ~ismac
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
@@ -671,3 +928,11 @@ while waitForEscape
 end
 
 cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+
+%% Trigger values sent by this task
+% Values are defined in functions/cog_send_triggers.m.
+% reset      -> 0
+% trialstart -> 20
+% cueonset   -> 45
+% response   -> 40
+% trialstop  -> 30

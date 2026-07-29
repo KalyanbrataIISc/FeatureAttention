@@ -1,11 +1,11 @@
 % gameBreakoutv2  SSVEP-neurofeedback Breakout — gamified edition.
 %
 % A paddle sits at the bottom of the screen. Its left third is a grating
-% flickering at 23 Hz, its right third a grating flickering at 29 Hz, and the
+% flickering at 19 Hz, its right third a grating flickering at 23 Hz, and the
 % strip between them does not flicker. Those two gratings are the whole SSVEP
 % stimulus, and the lateralisation of the participant's SSVEP response to
 % them - read live from nf.txt, written by RT_files/RT_acquisition_8.m - is
-% what moves the paddle: 23 Hz dominance drives it left, 29 Hz dominance
+% what moves the paddle: 19 Hz dominance drives it left, 23 Hz dominance
 % drives it right, at a speed linear in the lateralisation. So attending to
 % one side of the paddle steers the paddle toward that side.
 %
@@ -115,7 +115,7 @@ csvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_breakout_trialdata.csv', s
 % separate file so the one-row-per-trial main CSV above stays unchanged in
 % shape. Everything needed to reconstruct the trial offline is here: the NF
 % values actually used, the paddle they drove, and the resulting ball/brick.
-traceCsvHeader = ['TrialNumber,FrameNumber,SampleTime,NF23,NF29,NFSigned,NFReadOk,' ...
+traceCsvHeader = ['TrialNumber,FrameNumber,SampleTime,NF19,NF23,NFSigned,NFReadOk,' ...
     'PaddleCenterX,PaddleVxPxPerSec,BallX,BallY,BallVxPxPerSec,BallVyPxPerSec,BallSpin,' ...
     'BrickActive,BrickCenterX,BrickCenterY,BricksBroken'];
 traceCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_breakout_trace.csv', sessionTag), traceCsvHeader);
@@ -123,7 +123,7 @@ traceCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_breakout_trace.csv', 
 % Dropped/delayed-frame log: one row per frame whose Screen('Flip') missed
 % its requested presentation deadline. Same rationale as gameNFv2/v3 - the
 % SSVEP flicker phase here is anchored to real VBL timestamps precisely so
-% that GPU load cannot silently detune 23/29 Hz, and this file makes the drop
+% that GPU load cannot silently detune 19/23 Hz, and this file makes the drop
 % rate on a given rig measurable rather than inferred from EEG spectra later.
 droppedFrameCsvHeader = 'TrialNumber,FrameNumber,VBLTime,MissedBySec';
 droppedFrameCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_breakout_droppedframes.csv', sessionTag), droppedFrameCsvHeader);
@@ -186,7 +186,7 @@ trialNumberPerBlock = 24;     % one trial = one ball, from spawn to fall
 preSpawnDelaySec    = 2.000;  % 'Get ready' screen before the ball spawns. The gratings
 % already flicker and the paddle already tracks NF during this window, so the
 % SSVEP response has settled by the time the trial (and the trigger) starts.
-% Prefer whole seconds here: 23 Hz and 29 Hz both complete an exact whole
+% Prefer whole seconds here: 19 Hz and 23 Hz both complete an exact whole
 % number of cycles per second, so a whole-second lead-in puts both gratings
 % back at zero phase just as the trial starts, without ever interrupting the
 % flicker (which runs continuously from the start of this window).
@@ -212,8 +212,8 @@ paddleBorderPx       = 3;     % outline thickness, keeps the paddle visible at f
 % paddleWidthPx - 2*paddleGratingWidthPx = 140 px wide.
 paddleGratingWidthPx = 200;   % width of EACH grating region
 gratingBarWidthPx    = 14;    % bar width of the square-wave grating
-gratingLeftFreqHz    = 23;    % left grating flicker (drives the paddle LEFT)
-gratingRightFreqHz   = 29;    % right grating flicker (drives the paddle RIGHT)
+gratingLeftFreqHz    = 19;    % left grating flicker (drives the paddle LEFT)
+gratingRightFreqHz   = 23;    % right grating flicker (drives the paddle RIGHT)
 
 % ---- Ball ----
 ballRadiusPx           = 12;
@@ -246,11 +246,11 @@ brickSpawnBallClearancePx = 40;  % extra clearance (beyond the ball radius) a ne
 brickSpawnMaxAttempts     = 200; % rejection-sampling attempts for that clearance
 
 % ---- Neurofeedback: nf.txt -> paddle velocity ----
-% nf.txt is a 3-element binary double vector [SMI_23gt29, SMI_29gt23,
+% nf.txt is a 3-element binary double vector [SMI_19gt23, SMI_23gt19,
 % sampleCount], continuously overwritten (~every 100 ms) by the external
 % real-time acquisition process RT_files/RT_acquisition_8.m. Index 1 is
-% positive when 23 Hz SSVEP power exceeds 29 Hz, index 2 when 29 Hz exceeds
-% 23 Hz. The signed drive is nf29 - nf23: positive moves the paddle right,
+% positive when 19 Hz SSVEP power exceeds 23 Hz, index 2 when 23 Hz exceeds
+% 19 Hz. The signed drive is nf23 - nf19: positive moves the paddle right,
 % negative moves it left, and paddle speed is linear in it.
 %
 % nf.txt is re-read fresh on every displayed frame rather than on a local
@@ -263,11 +263,11 @@ brickSpawnMaxAttempts     = 200; % rejection-sampling attempts for that clearanc
 % sample, so the last good values are held rather than snapping the paddle to
 % a halt. No moving-average window is applied to the live values.
 nfFilePath                = fullfile(experimentRoot, 'nf.txt');
-nfIndex23                 = 1;    % nf.txt column: positive when 23 Hz > 29 Hz
-nfIndex29                 = 2;    % nf.txt column: positive when 29 Hz > 23 Hz
-paddleNfGainPxPerSec      = 600;  % paddle speed per unit of (nf29 - nf23)
+nfIndex19                 = 1;    % nf.txt column: positive when 19 Hz > 23 Hz
+nfIndex23                 = 2;    % nf.txt column: positive when 23 Hz > 19 Hz
+paddleNfGainPxPerSec      = 600;  % paddle speed per unit of (nf23 - nf19)
 paddleMaxSpeedPxPerSec    = 600;  % clamp on paddle speed
-paddleNfDeadzone          = 0.02; % |nf29 - nf23| below this pins the paddle still
+paddleNfDeadzone          = 0.02; % |nf23 - nf19| below this pins the paddle still
 
 % ---- Mac-only manual paddle override (development/testing) ----
 % On mac, holding an arrow key overrides the NF drive for that frame, so the
@@ -513,8 +513,8 @@ try
         % NF values are only overwritten on a successful read, so they start
         % at 0 (neutral) exactly as at a real trial start - RT_acquisition_8
         % itself zeroes nf.txt at trial start.
+        nf19 = 0;
         nf23 = 0;
-        nf29 = 0;
 
         bricksBroken  = 0;
         paddleBounces = 0;
@@ -555,13 +555,13 @@ try
         % at the start of this phase, after the blank ITI has switched them off.
         flickerT0 = vbl;
         for readyFrame = 1:preSpawnFrames
-            [newNf23, newNf29, nfReadOk] = readNfPair(nfFilePath, nfIndex23, nfIndex29);
+            [newNf19, newNf23, nfReadOk] = readNfPair(nfFilePath, nfIndex19, nfIndex23);
             if nfReadOk
+                nf19 = newNf19;
                 nf23 = newNf23;
-                nf29 = newNf29;
             end
 
-            paddleVxPxPerFrame = computePaddleVelocityFromNf(nf23, nf29, ...
+            paddleVxPxPerFrame = computePaddleVelocityFromNf(nf19, nf23, ...
                 paddleNfGainPxPerSec, paddleMaxSpeedPxPerSec, paddleNfDeadzone, interFrameInterval);
             if (ismac || ~cedrusAvailable) && allowKeyboardPaddleOnMac
                 [keyIsDown, ~, keyCode] = KbCheck(-1);
@@ -618,13 +618,13 @@ try
 
         for currentFrame = 1:maxTrialFrames
             %% Neurofeedback -> paddle velocity
-            [newNf23, newNf29, nfReadOk] = readNfPair(nfFilePath, nfIndex23, nfIndex29);
+            [newNf19, newNf23, nfReadOk] = readNfPair(nfFilePath, nfIndex19, nfIndex23);
             if nfReadOk
+                nf19 = newNf19;
                 nf23 = newNf23;
-                nf29 = newNf29;
             end
 
-            paddleVxPxPerFrame = computePaddleVelocityFromNf(nf23, nf29, ...
+            paddleVxPxPerFrame = computePaddleVelocityFromNf(nf19, nf23, ...
                 paddleNfGainPxPerSec, paddleMaxSpeedPxPerSec, paddleNfDeadzone, interFrameInterval);
             if (ismac || ~cedrusAvailable) && allowKeyboardPaddleOnMac
                 [keyIsDown, ~, keyCode] = KbCheck(-1);
@@ -703,7 +703,7 @@ try
             % refresh). vbl holds the ACTUAL measured timestamp of the previous
             % flip, so a flip delayed by GPU load shifts the prediction - and
             % the phase - to match reality on the very next frame, instead of
-            % letting a frame-counter clock silently detune 23/29 Hz for the
+            % letting a frame-counter clock silently detune 19/23 Hz for the
             % rest of the trial. flickerT0 was set before the 'Get ready' phase,
             % so the sinusoid runs unbroken into this loop.
             ssvepTPredicted = (vbl - flickerT0) + interFrameInterval;
@@ -813,7 +813,7 @@ try
                     brickCenterY = NaN;
                 end
                 traceRows(end+1, :) = [trialNumber, currentFrame, getElapsedTime(experimentStartTime), ...
-                    nf23, nf29, nf29 - nf23, nfReadOk, ...
+                    nf19, nf23, nf23 - nf19, nfReadOk, ...
                     paddleCenterX, paddleVxPxPerFrame / interFrameInterval, ...
                     ball.x, ball.y, ball.vx / interFrameInterval, ball.vy / interFrameInterval, ball.spin, ...
                     brickActive, brickCenterX, brickCenterY, bricksBroken]; %#ok<SAGROW>

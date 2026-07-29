@@ -3,10 +3,16 @@
 A PsychToolbox/MATLAB experiment combining feature-based attention with
 concurrent SSVEP tagging. The participant watches two independently moving
 and pointing flocks of leaf-shaped stimuli, gets cued on each trial to one of
-two color/rule pairings, and reports a cardinal direction.
+them, and reports a property of the cued flock.
 
-Main script: [`gamev1.m`](gamev1.m). Everything experimenter-tunable lives in
-its `%% PARAMETERS` block near the top.
+The script to run is [`gameNFv5.m`](gameNFv5.m); everything
+experimenter-tunable lives in its `%% PARAMETERS` block near the top. The
+sections below build up the task in the order the variants were written —
+the base task first, then each variant as a delta on the one before it — so
+read [Colour-report variant (`gameNFv5.m`)](#colour-report-variant-gamenfv5m)
+for what actually runs today. In particular, from `gameNFv5.m` on the cue is
+a **feature + direction** and the response is the cued flock's **colour**,
+not a direction.
 
 ## Stimuli
 
@@ -18,8 +24,19 @@ its `%% PARAMETERS` block near the top.
   pass near each other anywhere on screen). Each flock has its own:
   - **pointing direction** (where the leaf shape's tip faces)
   - **moving direction** (where the leaf actually travels)
-  - Both are drawn independently at random from `{up, down, left, right}`
-    at the start of every trial, and stay fixed for the whole trial.
+  - Both are fixed for the whole trial, and re-drawn each trial. From
+    `gameNFv3.m` on they are no longer four independent random draws:
+    flock 1's pointing and moving directions are always **different from
+    each other**, and flock 2 takes the **two leftover** directions — one
+    for pointing, one for moving. That yields exactly 4×3×2 = 24 distinct
+    `(c1Point, c1Move, c2Point, c2Move)` combinations, which are enumerated
+    and then consumed one shuffled 24-trial cycle at a time. So the order
+    stays random while every combination is used equally often, including
+    at each 24-trial boundary. A `trialNumberPerBlock` that isn't a
+    multiple of 24 still balances as evenly as integer counts allow (the
+    leftover trials draw distinct combos, no repeats within that partial
+    cycle). The older `legacy/gamev1.m`/`gameNF.m`/`gameNFv2.m` instead
+    drew all four directions independently at random.
 - **RDK-style appear/disappear**: each leaf has a limited on-screen lifetime
   (`leafLifetimeSec`); when it expires, or the leaf drifts off the edge of
   the field, or it gets too close to another leaf, it is respawned at a
@@ -34,6 +51,10 @@ its `%% PARAMETERS` block near the top.
   `leafBorderThicknessMultiplier`, `minLeafSeparationMultiplier`).
 
 ## The cue and the task rule
+
+*(This is the base task's rule, kept by every variant up to `gameNFv4.m`.
+`gameNFv5.m` replaces it — see
+[Colour-report variant](#colour-report-variant-gamenfv5m).)*
 
 Each flock is associated with one of two colors, **c1** and **c2**. The
 meaning of each color is fixed for the whole experiment:
@@ -101,12 +122,34 @@ and cleaning up; no CSV row is written for an aborted trial.
 
 Each flock's leaves have a thick border that flickers in luminance between
 `colorBorderLow`/`colorBorderHigh` (default black/white) — flock c1 at
-`freqC1Hz` (23 Hz default), flock c2 at `freqC2Hz` (29 Hz default). The
+`freqC1Hz` (19 Hz default), flock c2 at `freqC2Hz` (23 Hz default). The
 flicker is computed from continuous elapsed time since trial start
 (`helperFunctions/computeSsvepBorderColors.m`), independent of the cue and
 uninterrupted across the pre-cue/response/feedback phases — it only resets
 at the next trial's start. Every leaf in a flock shares the same time base
 and frequency, so all leaves in a flock are phase-locked automatically.
+
+**The tagging pair is 19/23 Hz** across the whole project — the games, the
+Breakout paddle gratings, `RT_files/RT_acquisition_8.m`/`RT_experiment_5.m`
+and the offline analyses all use the same two numbers, and `nf.txt`'s two
+columns are now `[SMI_19gt23, SMI_23gt19, sampleCount]`. It was 23/29 Hz
+before that, and 17/20 Hz before that.
+
+The 4 Hz gap matters for how the online statistic is computed.
+`RT_acquisition_8.m` estimates power from a 1 s, 128-sample epoch with
+`params.tapers = [1 1]` — 1 Hz bins and a ±1 Hz multitaper half-bandwidth —
+and normalises each tag against its two immediately adjacent bins. At
+19/23 Hz those references are 18/20 and 22/24 Hz, all well clear of the
+other tag's response and of its smoothing kernel, so each tag's noise floor
+is genuinely noise. A 2 Hz-spaced pair (e.g. 17/19) would not clear it: the
+17 Hz tag's upper reference bin at 18 Hz would sit on the shoulder of the
+19 Hz response and vice versa, making each tag's noise floor partly the
+other tag and compressing the lateralisation index. Keep at least ~4 Hz of
+separation if this pair is ever retuned again, or lengthen the epoch for
+finer bins first.
+
+The one place still on the old scheme is `SSVEPTestTrials.m`, whose
+`gratingFreqHz` is 20 Hz.
 
 ## Response input
 
@@ -118,7 +161,9 @@ and frequency, so all leaves in a flock are phase-locked automatically.
   on a laptop without the lab hardware.
 
 See `helperFunctions/getDirectionResponse.m` for the unified 4-direction
-response check used on both platforms.
+response check used on both platforms. `gameNFv5.m` instead uses a
+2-alternative colour response (Cedrus Left/Right only, arrow keys on mac) —
+`helperFunctions/getColorResponse.m`.
 
 ## Triggers
 
@@ -140,17 +185,33 @@ ResponseTimeout, TrialEnd
 
 ## Project layout
 
-- `gamev1.m` — the experiment script (init → participant/block info → CSV
-  header → PsychToolbox setup → `%% PARAMETERS` → screen open → trial loop
-  → cleanup).
-- `gameNF.m` — the neurofeedback variant of the same script; see
-  [Neurofeedback variant](#neurofeedback-variant-gamenfm) above.
-- `gameNFv2.m` — a further, independent copy of `gameNF.m` with a
-  timing-robustness fix for the SSVEP flicker; see
-  [Timing-hardened variant](#timing-hardened-variant-gamenfv2m) below.
-- `gameBreakout.m` — a different task entirely (SSVEP-neurofeedback Breakout),
-  sharing only `nf.txt` and the scaffolding; see
-  [Breakout task](#breakout-task-gamebreakoutm) below.
+- `gameNFv5.m` — **the current variant, and the script to run.** Same
+  structure as every variant below (init → participant/block info → CSV
+  header → PsychToolbox setup → `%% PARAMETERS` → screen open → trial loop →
+  cleanup) and the same neurofeedback as `gameNFv4.m`, but the cue is a
+  feature + direction and the response is the cued flock's colour; see
+  [Colour-report variant](#colour-report-variant-gamenfv5m) below.
+- `gameNFv4.m` — the previous variant: same neurofeedback, but cued by
+  colour and answered with a direction. Leaf color driven by a windowed
+  sustained-success statistic; see
+  [Windowed-neurofeedback variant](#windowed-neurofeedback-variant-gamenfv4m)
+  below.
+- `gameNFv3.m` — the variant before that: `gameNFv2.m` plus the
+  direction-balancing scheme described under [Stimuli](#stimuli). Identical
+  to `gameNFv4.m` except that its leaf color follows the *instantaneous*
+  `nf.txt` value.
+- `legacy/` — superseded scripts, kept for reference and no longer run:
+  `gamev1.m` (the original non-NF task), `gameNF.m` (the first
+  neurofeedback variant; see
+  [Neurofeedback variant](#neurofeedback-variant-gamenfm) above),
+  `gameNFv2.m` (the SSVEP timing-robustness fix; see
+  [Timing-hardened variant](#timing-hardened-variant-gamenfv2m) below), and
+  `gameBreakout.m`. The sections below describe each of these in the order
+  they were built, since every later variant is a copy of the one before it
+  — so `gameNFv4.m`'s behavior is the sum of all of them.
+- `gameBreakoutv2.m` / `gameBreakoutv3_WL.m` — a different task entirely
+  (SSVEP-neurofeedback Breakout), sharing only `nf.txt` and the scaffolding;
+  see [Breakout task](#breakout-task-gamebreakoutm) below.
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
@@ -163,7 +224,7 @@ ResponseTimeout, TrialEnd
   physics, collisions, brick spawning, paddle NF control, grating drawing).
 - `nf.txt` — binary NF data file in the project root, continuously
   overwritten by the external real-time acquisition process; read (not
-  written) by `gameNF.m`.
+  written) by every `gameNF*.m` variant.
 - `data/` — per-participant/block CSV logs (created on first run).
 - `analysis/ssvepCueOnsetLocked.m` and
   `analysis/ssvepResponseLocked.m` — offline cue-locked and response-locked
@@ -176,19 +237,23 @@ ResponseTimeout, TrialEnd
 
 ## Running it
 
-Open and run `gamev1.m` in MATLAB with PsychToolbox installed. On Windows
-you'll be prompted for participant number, block number, and whether to run
-eye tracking; on mac these default automatically (participant/block `000`,
-eye tracking off) so it just launches straight into the task.
+Open and run `gameNFv5.m` in MATLAB with PsychToolbox installed (earlier
+`gameNF*.m` variants and the scripts in `legacy/` are documented below but
+are no longer the ones to run). On Windows you'll be prompted for
+participant number, block number, and whether to run eye tracking; on mac
+these default automatically (participant/block `000`, eye tracking off) so
+it just launches straight into the task.
 
 Before the block starts, a one-time instructions screen explains the task
-in text and shows two **static** (non-moving) example leaves — one in
-`colorC1` labeled "use its POINTING direction", one in `colorC2` labeled
-"use its MOVING direction" — so the color/rule mapping is shown concretely
-rather than only described. Press any key/button on that screen to begin;
-ESC exits at any point during the block. All tunable values (timing, leaf
-size/speed/count, colors, SSVEP frequencies, cue rectangle) are in the
-`%% PARAMETERS` block near the top of `gamev1.m`.
+in text and shows two **static** (non-moving) example leaves. In
+`gameNFv5.m` those show the colour → button mapping (orange on the left
+labeled "press the LEFT button", blue on the right labeled "press the RIGHT
+button"); in `gameNFv4.m` and earlier they instead showed the colour → rule
+mapping ("use its POINTING direction" / "use its MOVING direction"). Press
+any key/button on that screen to begin; ESC exits at any point during the
+block. All tunable values (timing, leaf size/speed/count, colors, SSVEP
+frequencies, cue rectangle, and the neurofeedback window/thresholds) are in
+the `%% PARAMETERS` block near the top of the script.
 
 ## GDF playback viewer
 
@@ -291,7 +356,7 @@ their true saturated color), converting back to sRGB for `Screen`.
 (`RT_files/RT_acquisition_8.m`, run separately from this repo's
 PsychToolbox side) continuously overwrites `nf.txt` (in the project root,
 `nfFilePath` in `gameNF.m`) with a 3-element binary double vector:
-`[SMI_23gt29, SMI_29gt23, sampleCount]` — the 23Hz-vs-29Hz SSVEP power
+`[SMI_19gt23, SMI_23gt19, sampleCount]` — the 19Hz-vs-23Hz SSVEP power
 separation, computed from the pooled 28-electrode SSVEP ROI for both
 frequencies. In the 41-channel GDF EEG order (`A1-A32+B1-B9`), that ROI is
 the 14 right-electrode indices `[28 30 32 36 38 35 37 39 40 41 26 27 29 31]`
@@ -306,8 +371,8 @@ the SMI pair moved down to indices 1/2 and `sampleCount` to index 3.)
 **Which column, and when it's decided.** Which of the two SMI columns is
 "correct" depends on the trial's cue and never changes mid-trial, so it's
 decided once at trial setup (before the trial's frame loop starts): cue
-`c1` (23Hz) uses column 1 (positive when 23Hz > 29Hz), cue `c2` (29Hz) uses
-column 2 (positive when 29Hz > 23Hz).
+`c1` (19Hz) uses column 1 (positive when 19Hz > 23Hz), cue `c2` (23Hz) uses
+column 2 (positive when 23Hz > 19Hz).
 
 **Read cadence vs. visual gating.** `nf.txt` is re-read fresh every
 displayed frame, starting at trial start (frame 1) — continuing through the
@@ -321,7 +386,10 @@ gated: pre-cue frames always render plain `grey` with no NF influence at
 all (not even the baseline reveal), so no cue-consistent information leaks
 before cue onset. No moving-average window is applied to the live NF
 value, unlike the neurofeedback experiment this borrows the `nf.txt`
-protocol from.
+protocol from. (This last point is what the current `gameNFv4.m` changes —
+see [Windowed-neurofeedback
+variant](#windowed-neurofeedback-variant-gamenfv4m) below. Everything else
+in this section still describes it.)
 
 **Response window.** `responseTimeoutSec` is 10s (vs. 4s in `gamev1.m`), to
 give the participant more time to work with the NF-driven coloring before
@@ -376,7 +444,7 @@ That counter has no feedback from real elapsed time: every dropped frame
 makes the code's phase clock fall further behind the wall clock, and the
 error only accumulates for the rest of the trial. In practice this shows up
 as the flicker's *measured* frequency drifting visibly below its nominal
-value (e.g. 23 Hz reading as ~22.5 Hz, 29 Hz as ~28.3 Hz) by an amount that
+value (e.g. 19 Hz reading as ~18.6 Hz, 23 Hz as ~22.5 Hz) by an amount that
 tracks how much load the GPU is under - which will degrade SSVEP phase
 locking and power in any later analysis.
 
@@ -420,6 +488,190 @@ TrialNumber, FrameNumber, VBLTime, MissedBySec
 `MissedBySec` is `Screen('Flip')`'s own estimate (seconds) of how far past
 its requested deadline the flip actually landed.
 
+## Windowed-neurofeedback variant (`gameNFv4.m`)
+
+`gameNFv4.m` was the current neurofeedback variant until `gameNFv5.m`
+(below) superseded it — an independent copy of `gameNFv3.m` (itself a copy of `gameNFv2.m` with the direction-balancing
+scheme described under [Stimuli](#stimuli)), changing only *what statistic
+the leaf color is driven by*. Everything else — the CIELAB Delta E color
+mapping, the real-time-anchored SSVEP phase, dropped-frame logging, the
+`nf.txt` protocol, triggers, trial flow — is unchanged from `gameNFv2.m`.
+
+**The problem.** In every earlier NF variant the leaf fill tracks the
+*instantaneous* value read from `nf.txt`. Real-time SSVEP power
+lateralisation is very noisy on its ~100ms update cadence, so the leaves
+visibly flicker in color, which is both distracting and hard to act on.
+
+**The fix — a windowed sustained-success statistic.** Instead of the raw
+value, the color is driven by how much of a trailing window the participant
+held a good-enough lateralisation:
+
+1. Every displayed frame's NF value is pushed into a rolling `nfWindowSec`
+   ring buffer, re-zeroed at each trial start.
+2. `nfAboveProportion` = the fraction of that window strictly above
+   `nfValueThreshold`.
+3. That proportion is thresholded and rescaled — at or below
+   `nfProportionThreshold` the drive is 0, and the top slice
+   `[nfProportionThreshold, 1]` maps linearly onto drive `[0, 1]`. This
+   drive, not the raw value, is what
+   `helperFunctions/computeNfLeafColor.m` receives.
+
+Defaults:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `nfWindowSec` | `1.000` | length of the trailing window |
+| `nfValueThreshold` | `0.001` | an NF value must exceed this to count as a success |
+| `nfProportionThreshold` | `0.80` | proportion of the window that must be successes before *any* color is revealed |
+
+At `nfValueThreshold = 0.001` — just above zero — a sample counts as a
+success whenever the lateralisation favours the cued frequency *at all*, so
+the statistic is effectively a sign test ("what fraction of the last second
+did SSVEP lean the right way?") rather than a test of how *strongly* it
+leaned. Raise it to demand a minimum magnitude as well.
+
+**Latencies follow directly from those two timing numbers:**
+
+```
+first color   = nfProportionThreshold * nfWindowSec        -> 0.8s
+full color    = nfWindowSec                                -> 1.0s
+back to grey  = (1 - nfProportionThreshold) * nfWindowSec  -> 0.2s
+```
+
+So success has to be earned across most of a window but is lost again
+quickly. Raising `nfProportionThreshold` sharpens both ends at once.
+
+**Sampling per displayed frame, not per `nf.txt` write.** `nf.txt` only
+changes every ~100ms, so consecutive frames push the same value ~6 times
+over. That is deliberate: it makes the result a proportion of elapsed
+*time* rather than of samples, and keeps it correct even when the external
+writer's cadence jitters.
+
+**The window is pre-filled with zeros at trial start**, so it is always
+exactly `nfWindowFrames` long and the proportion's denominator never
+changes. A window sized only to the samples collected so far would let a
+single lucky above-threshold sample on frame 1 read as a proportion of 1.0
+and drive full color, and would be wildly noisy until `nfWindowSec` had
+elapsed. Pre-filled zeros count as ordinary below-threshold failures
+instead, so color can only ever appear after a genuinely sustained run of
+successes — and the latency from cue onset is identical no matter how short
+that trial's pre-cue period happened to be.
+
+The window keeps filling from **trial start**, not cue onset, so it already
+carries real data by the time color is first shown and there is no ramp-up
+dead time at cue onset. Only the *visual* use of the drive is gated to
+post-cue; the buffer updates on every frame regardless of phase.
+`RT_acquisition_8.m` zeroes `nf.txt` at trial start, so the earliest pre-cue
+samples read ~0 anyway and agree with the pre-filled zeros they replace.
+Note that this does mean a genuinely sustained pre-cue lateralisation (a
+full `nfWindowSec` of it) will show color immediately at cue onset — that is
+real data, not an artifact.
+
+**CSV output differences.** The main per-trial CSV and the dropped-frame CSV
+are identical in shape to `gameNFv2.m`'s. The NF trace CSV gains two columns:
+
+```
+TrialNumber, FrameNumber, SampleTime, NFIndexUsed, NFValueRaw,
+NFValueClipped, NFWindowProportion, NFDrive, PostCueOnset, NFReadOk
+```
+
+`NFWindowProportion` is `nfAboveProportion` at that sampled frame and
+`NFDrive` is the rescaled `[0, 1]` value actually driving the color;
+`NFValueRaw`/`NFValueClipped` are retained so the underlying raw stream the
+window was computed from stays auditable offline. There is no window-fill
+column because the window is pre-filled and therefore always full.
+`NFValueClipped` is now purely diagnostic — it no longer drives anything.
+
+## Colour-report variant (`gameNFv5.m`)
+
+`gameNFv5.m` is the **current** variant and the script to run — an
+independent copy of `gameNFv4.m` that leaves the neurofeedback completely
+untouched (same windowed sustained-success statistic and its three
+parameters, same CIELAB Delta E colour mapping, same `nf.txt` protocol and
+per-frame read cadence, same SSVEP tagging, timing, jitter, triggers,
+dropped-frame logging and NF-trace CSV) and changes only **what the cue says
+and what the participant reports**.
+
+**The cue is a feature + a direction.** Instead of a coloured box saying
+"Pointing"/"Moving", the box shows two lines — the feature above the
+direction, e.g. `MOVING` / `UP` — meaning *the group that is moving upward*.
+Since the direction scheme from `gameNFv3.m` on makes
+`(c1PointDir, c1MoveDir, c2PointDir, c2MoveDir)` a permutation of all four
+directions, exactly four cues are possible on any trial:
+
+```
+moving c1MoveDir     pointing c1PointDir     (both identify flock c1)
+moving c2MoveDir     pointing c2PointDir     (both identify flock c2)
+```
+
+Each identifies exactly one flock. The four cue types are consumed as
+shuffled **4-trial cycles** (the same idea as the 24-trial direction
+cycles), so all four types — and therefore both features, both cued flocks
+and both correct colours — occur equally often at every 4-trial boundary,
+not merely across the whole block. Note that because all four directions are
+distinct, the cued direction on its own is already unique: the feature word
+tells the participant *which dimension to search*, it does not disambiguate
+two candidate flocks.
+
+**The response is the cued flock's colour.** Two alternatives, fixed for the
+whole experiment and spelled out on the instructions screen:
+
+```
+Cedrus Left (3) / left arrow   = ORANGE = flock c2
+Cedrus Right (5) / right arrow = BLUE   = flock c1
+```
+
+Cedrus Up/Middle/Down are simply ignored (the response window stays open).
+See `helperFunctions/getColorResponse.m`; the label each button maps to is
+passed in from `gameNFv5.m`'s `responseLabelC1`/`responseLabelC2`, so the
+mapping lives next to the colours it refers to in the `%% PARAMETERS` block.
+
+**The cue box is neutral.** It can no longer be filled with the cued flock's
+colour — that colour is the answer. It stays black through the pre-cue
+period and the ITI (`colorCueRectPreCue`) and turns **dark green**
+(`colorCueRectPostCue`, `[0 100 0]`) with white text at cue onset, and is
+bigger than `gameNFv4.m`'s (280×120 px) to fit two lines. Dark green is
+neutral with respect to both flock colours and is a far smaller luminance
+step up from the black pre-cue box than white would be, which matters for a
+box sitting at fixation in an SSVEP recording. Feedback still replaces the
+cue text inside that same box, in light green/red (`colorFeedbackCorrect`
+`[170 255 170]`, `colorFeedbackIncorrect` `[255 150 150]`) so it stays
+readable against the dark green fill.
+
+**The task is deliberately gated on neurofeedback success.** The leaf fill
+colour is both the NF signal and the answer, and `nfBaselineDeltaE` stays at
+`0`, so there is no fixed cue-onset reveal: the flocks are pure background
+grey and differ only in their directions and their 19/23 Hz border flicker
+until a sustained correct lateralisation brings the colours out. A trial
+where that never happens ends as a guess or a timeout, by design. Two
+consequences for analysis: chance is now **50%**, not 25%, and reaction time
+is dominated by time-to-reveal rather than by decision time — which is what
+the new `ColorRevealTime` column is for. Setting `nfBaselineDeltaE` above 0
+makes every trial answerable but removes the gating.
+
+**CSV output differences.** The NF-trace and dropped-frame CSVs are
+unchanged. The main per-trial CSV gains `CueFeature`, `CueDirection` and a
+trailing `ColorRevealTime`:
+
+```
+TrialNumber, TrialStart, C1PointDir, C1MoveDir, C2PointDir, C2MoveDir, Cue,
+CueFeature, CueDirection, CueOnsetTime, CorrectResponse, ParticipantResponse,
+Accuracy, ReactionTime, ResponseTimeout, TrialEnd, DroppedFrameCount,
+ColorRevealTime
+```
+
+`CueFeature` is `moving`/`pointing` and `CueDirection` is the cued
+`up`/`down`/`left`/`right` — together, the literal cue that was displayed.
+`Cue` is **kept**, still valued `c1`/`c2` (the flock the cue points at):
+it is what fixes the attended SSVEP frequency and the `nf.txt` column, and
+it is what the offline `analysis/` scripts and
+`helperFunctions/computeRtStatsByBlockAndCue.m` group by, so they keep
+working unchanged. `CorrectResponse`/`ParticipantResponse` now hold
+`blue`/`orange` (or `missed`) rather than a direction. `ColorRevealTime` is
+the timestamp of the first post-cue frame actually displayed with
+`nfDrive > 0`, taken after that frame's flip like `CueOnsetTime`, and is
+`NaN` on trials where the colours never appeared.
+
 ## Breakout task (`gameBreakout.m`)
 
 `gameBreakout.m` is **not** a variant of the leaves task. It is a separate
@@ -432,22 +684,22 @@ one function per file.
 
 **The paddle is the stimulus and the effector.** A wide paddle sits near the
 bottom of the screen, split across its width into three regions: a grating
-flickering at `gratingLeftFreqHz` (23 Hz) on the left, a **non-flickering**
-strip in the middle, and a grating at `gratingRightFreqHz` (29 Hz) on the
+flickering at `gratingLeftFreqHz` (19 Hz) on the left, a **non-flickering**
+strip in the middle, and a grating at `gratingRightFreqHz` (23 Hz) on the
 right. Those two gratings are the entire SSVEP stimulus. Their flicker is an
 on-off sinusoidal contrast envelope — at the peak of each cycle the bars sit at
 full black/white contrast, at the trough both collapse to a uniform grey and
 the pattern vanishes — so the flicker fundamental is exactly the nominal
 frequency (`breakoutHelperFunctions/computeGratingColors.m`). A
 contrast-*reversing* grating was deliberately not used: its dominant response
-would land at 2f, not at the 23/29 Hz bins the acquisition and the control law
+would land at 2f, not at the 19/23 Hz bins the acquisition and the control law
 are built around.
 
 **Paddle motion is the neurofeedback.** `nf.txt` is read fresh every displayed
 frame (`breakoutHelperFunctions/readNfPair.m`, which reads both columns in one
-`fopen`, unlike the leaves task's one-column `readNFValue.m`). 23 Hz dominance
-drives the paddle left, 29 Hz dominance drives it right, at a speed **linear**
-in `nf29 - nf23`, clamped to `paddleMaxSpeedPxPerSec`, with a `paddleNfDeadzone`
+`fopen`, unlike the leaves task's one-column `readNFValue.m`). 19 Hz dominance
+drives the paddle left, 23 Hz dominance drives it right, at a speed **linear**
+in `nf23 - nf19`, clamped to `paddleMaxSpeedPxPerSec`, with a `paddleNfDeadzone`
 that pins near-neutral lateralisation to a standstill
 (`computePaddleVelocityFromNf.m`). So attending to one side of the paddle
 steers the paddle to that side. A failed read (file caught mid-write) holds the
@@ -481,7 +733,7 @@ materialises on top of it.
 1. **Get ready** (`preSpawnDelaySec`) — no ball, no trigger, no logging, but
    the gratings already flicker and the paddle already tracks NF, so the SSVEP
    response has settled by the time the trial starts. Prefer whole seconds
-   here: 23 and 29 Hz both complete a whole number of cycles per second, so the
+   here: 19 and 23 Hz both complete a whole number of cycles per second, so the
    flicker is back at zero phase exactly at ball spawn.
 2. **Ball spawn = trial start** — trigger `trialstart`, ball launched upward
    from the paddle at a random angle within `±ballLaunchMaxAngleDeg`.
@@ -496,7 +748,7 @@ gratings are on screen across that boundary, so resetting the phase there would
 step the sinusoid discontinuously and evoke a transient at exactly the
 `trialstart` trigger. As in `gameNFv2.m`, that phase is computed from measured
 `Screen('Flip')` VBL timestamps rather than a frame counter, so a dropped frame
-costs one bounded phase correction instead of permanently detuning 23/29 Hz.
+costs one bounded phase correction instead of permanently detuning 19/23 Hz.
 
 **Triggers.** Sent as raw bytes via `helperFunctions/sendNumericTrigger.m`, with
 the values set in the `%% PARAMETERS` block, so this task can define its own
@@ -538,7 +790,7 @@ of the ball falling. A `~100ms` trace of the whole game state (sampled every
 that cadence) in `p<participant>_b<block>_breakout_trace.csv`:
 
 ```
-TrialNumber, FrameNumber, SampleTime, NF23, NF29, NFSigned, NFReadOk,
+TrialNumber, FrameNumber, SampleTime, NF19, NF23, NFSigned, NFReadOk,
 PaddleCenterX, PaddleVxPxPerSec, BallX, BallY, BallVxPxPerSec, BallVyPxPerSec,
 BallSpin, BrickActive, BrickCenterX, BrickCenterY, BricksBroken
 ```
@@ -569,7 +821,9 @@ and a letter-counting working-memory load in one simple design.
 screen center: a plain vertical-bar square-wave grating (drawn with
 `breakoutHelperFunctions/drawFlickerGrating.m`, the same grating primitive
 `gameBreakoutv2.m`'s paddle uses) whose *contrast* is what flickers
-sinusoidally at `gratingFreqHz` (23 Hz default) between `grey` (0 contrast -
+sinusoidally at `gratingFreqHz` (20 Hz in the current script — this task was
+never moved onto the tagging pair the other tasks use, which is now 19/23 Hz)
+between `grey` (0 contrast -
 the pattern vanishes into the background) and full black/white (via
 `breakoutHelperFunctions/computeGratingColors.m`). The grating is clipped to
 a circle by a one-time RGBA aperture-mask texture
@@ -652,7 +906,8 @@ disc/letter appearance) are in the `%% PARAMETERS` block near the top of
 `SSVEPTestTrials.m`.
 
 ---
-**Keeping this file in sync**: whenever `gamev1.m`, `gameNF.m`, `gameNFv2.m`,
-`gameBreakout.m`, `SSVEPTestTrials.m` (or their helper functions) changes in a
-way that affects behavior, parameters, timing, triggers, or CSV columns,
-update this README to match in the same change. See `CLAUDE.md`.
+**Keeping this file in sync**: whenever `gameNFv5.m`, `gameNFv4.m`, `gameNFv3.m`,
+`gameBreakoutv2.m`, `gameBreakoutv3_WL.m`, `SSVEPTestTrials.m`, anything in
+`legacy/` (or their helper functions) changes in a way that affects
+behavior, parameters, timing, triggers, or CSV columns, update this README
+to match in the same change. See `CLAUDE.md`.
