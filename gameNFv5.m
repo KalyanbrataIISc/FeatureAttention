@@ -626,6 +626,7 @@ try
 
         trialStartTime = getElapsedTime(experimentStartTime);
         cueOnsetTime = NaN;
+        cueOnsetAbsTime = NaN;  % raw GetSecs companion to cueOnsetTime, see the frame loop
         % v5: timestamp of the first post-cue frame that actually displayed
         % any leaf color (nfDrive > 0). Stays NaN if the participant never
         % sustained the cued lateralisation long enough - in which case they
@@ -760,7 +761,17 @@ try
             end
 
             if currentFrame == cueOnsetFrame
-                cueOnsetTime = getElapsedTime(experimentStartTime);
+                % cueOnsetAbsTime is the raw GetSecs value; cueOnsetTime is
+                % the time-since-experiment-start the CSV logs. Both are
+                % needed: getColorResponse's mac branch does
+                % GetSecs - responseOnsetTime, so passing it the relative
+                % value made mac-mode ReactionTime come out as roughly
+                % "seconds since boot" rather than a reaction time. Windows
+                % was never affected - its RT comes from the Cedrus box's
+                % own timer, reset just below. Taken from one GetSecs call
+                % so the two timestamps can't disagree.
+                cueOnsetAbsTime = GetSecs;
+                cueOnsetTime = cueOnsetAbsTime - experimentStartTime;
                 if ~ismac
                     cog_send_triggers(paraport, 'cueonset');
                     cedrus.resettimer();
@@ -790,10 +801,10 @@ try
                 % right = blue = c1) instead of gameNFv4.m's 4-direction one.
                 if ~ismac
                     [validResponse, participantResponse, reactionTime] = getColorResponse( ...
-                        false, cedrus, leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetTime);
+                        false, cedrus, leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetAbsTime);
                 else
                     [validResponse, participantResponse, reactionTime] = getColorResponse( ...
-                        true, [], leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetTime);
+                        true, [], leftKey, rightKey, responseLabelC2, responseLabelC1, cueOnsetAbsTime);
                 end
 
                 if validResponse

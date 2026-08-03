@@ -5,14 +5,22 @@ concurrent SSVEP tagging. The participant watches two independently moving
 and pointing flocks of leaf-shaped stimuli, gets cued on each trial to one of
 them, and reports a property of the cued flock.
 
-The script to run is [`gameNFv5.m`](gameNFv5.m); everything
+The script to run is [`gameNFv6.m`](gameNFv6.m); everything
 experimenter-tunable lives in its `%% PARAMETERS` block near the top. The
 sections below build up the task in the order the variants were written —
 the base task first, then each variant as a delta on the one before it — so
-read [Colour-report variant (`gameNFv5.m`)](#colour-report-variant-gamenfv5m)
-for what actually runs today. In particular, from `gameNFv5.m` on the cue is
-a **feature + direction** and the response is the cued flock's **colour**,
-not a direction.
+read
+[Grayscale-integrator neurofeedback variant (`gameNFv6.m`)](#grayscale-integrator-neurofeedback-variant-gamenfv6m)
+for what actually runs today.
+
+Note that the variants are **not** a single line of descent. `gameNFv6.m`
+branches off `gameNFv4.m`, so it keeps that variant's cue and goal — a
+coloured box saying `Pointing`/`Moving`, answered with a **direction**. It
+does *not* inherit `gameNFv5.m`'s feature+direction cue and colour report,
+which remain a separate branch. What `gameNFv6.m` changes is the
+neurofeedback itself: a black display, a black↔white SSVEP flicker, an
+integrated grayscale leaf fill that must be driven up and held to reveal the
+flock colours, and no response accepted until it is.
 
 ## Stimuli
 
@@ -52,9 +60,12 @@ not a direction.
 
 ## The cue and the task rule
 
-*(This is the base task's rule, kept by every variant up to `gameNFv4.m`.
-`gameNFv5.m` replaces it — see
-[Colour-report variant](#colour-report-variant-gamenfv5m).)*
+*(This is the base task's rule. Every variant keeps it except `gameNFv5.m`,
+which replaces it — see
+[Colour-report variant](#colour-report-variant-gamenfv5m). `gameNFv6.m`, the
+script that runs today, keeps this rule; what it changes is when the flock
+colours become visible at all — see
+[Grayscale-integrator neurofeedback variant](#grayscale-integrator-neurofeedback-variant-gamenfv6m).)*
 
 Each flock is associated with one of two colors, **c1** and **c2**. The
 meaning of each color is fixed for the whole experiment:
@@ -191,6 +202,14 @@ response check used on both platforms. `gameNFv5.m` instead uses a
 2-alternative colour response (Cedrus Left/Right only, arrow keys on mac) —
 `helperFunctions/getColorResponse.m`.
 
+In `gameNFv6.m` the response check is **not polled for the whole post-cue
+period**: it only starts once the neurofeedback has revealed the flock
+colours, and `ReactionTime` is measured from that colour onset rather than
+from cue onset. Presses made before then are discarded (on Cedrus, by the
+`resettimer()` at colour onset, which clears the button queue as well as
+zeroing the timer). See
+[Grayscale-integrator neurofeedback variant](#grayscale-integrator-neurofeedback-variant-gamenfv6m).
+
 ## Triggers
 
 Sent via `cog_send_triggers` (`functions/cog_send_triggers.m`):
@@ -209,17 +228,42 @@ CueOnsetTime, CorrectResponse, ParticipantResponse, Accuracy, ReactionTime,
 ResponseTimeout, TrialEnd
 ```
 
+All timestamp columns are seconds since experiment start. `ReactionTime` is
+the exception — it is an interval, measured from cue onset (from **colour
+onset** in `gameNFv6.m`), and comes from two different clocks depending on
+run mode: the Cedrus box's own millisecond timer in experiment mode, and
+`GetSecs` in testing/mac mode.
+
+> **Note on previously collected testing/mac-mode data.** Until this was
+> fixed, every variant passed the response helpers the *relative*
+> cue-onset time while their `GetSecs` branch expected an absolute
+> timestamp, so `ReactionTime` in testing/mac mode came out as roughly
+> "seconds since boot" rather than a reaction time. Experiment-mode data was
+> never affected, because the Cedrus device timer supplies the interval
+> directly. The fix is in `gameNFv3.m`–`gameNFv6.m` and in `legacy/`; any
+> testing-mode CSV written before it should have its `ReactionTime` column
+> treated as unusable (accuracy and every other column are fine).
+
 ## Project layout
 
-- `gameNFv5.m` — **the current variant, and the script to run.** Same
+- `gameNFv6.m` — **the current variant, and the script to run.** Same
   structure as every variant below (init → participant/block info → CSV
   header → PsychToolbox setup → `%% PARAMETERS` → screen open → trial loop →
-  cleanup) and the same neurofeedback as `gameNFv4.m`, but the cue is a
+  cleanup). The only variant that branches off `gameNFv4.m` rather than
+  continuing the `gameNFv5.m` line, so it keeps `gameNFv4.m`'s cue and
+  direction-report goal, but replaces the neurofeedback: a black display, a
+  black↔white SSVEP flicker, an *integrated* grayscale leaf fill, a green
+  zone that must be held to reveal the flock colours, and no response
+  accepted until it is; see
+  [Grayscale-integrator neurofeedback variant](#grayscale-integrator-neurofeedback-variant-gamenfv6m)
+  below.
+- `gameNFv5.m` — a separate branch, not superseded by `gameNFv6.m` and not
+  an ancestor of it: same neurofeedback as `gameNFv4.m`, but the cue is a
   feature + direction and the response is the cued flock's colour; see
   [Colour-report variant](#colour-report-variant-gamenfv5m) below.
-- `gameNFv4.m` — the previous variant: same neurofeedback, but cued by
-  colour and answered with a direction. Leaf color driven by a windowed
-  sustained-success statistic; see
+- `gameNFv4.m` — the variant both of the above are built from: cued by
+  colour and answered with a direction, with the leaf color driven by a
+  windowed sustained-success statistic; see
   [Windowed-neurofeedback variant](#windowed-neurofeedback-variant-gamenfv4m)
   below.
 - `gameNFv3.m` — the variant before that: `gameNFv2.m` plus the
@@ -252,34 +296,58 @@ ResponseTimeout, TrialEnd
   overwritten by the external real-time acquisition process; read (not
   written) by every `gameNF*.m` variant.
 - `data/` — per-participant/block CSV logs (created on first run).
-- `analysis/ssvepCueOnsetLocked.m` and
-  `analysis/ssvepResponseLocked.m` — offline cue-locked and response-locked
-  SSVEP analyses. Each script can independently generate combined and/or
-  per-participant ongoing (induced) and evoked power spectra in addition to
-  its event-locked time-series plots.
+- `analysis/gameNFSSVEPCueOnsetLocked.m`,
+  `analysis/gameNFSSVEPResponseLocked.m` and
+  `analysis/gameNFSSVEPColorOnsetLocked.m` — offline cue-locked,
+  response-locked and colour-onset-locked SSVEP analyses. The three share
+  their GDF loading, preprocessing, trial matching, 28-electrode SSVEP ROI
+  and spectra, differing only in the event they lock to. Each can
+  independently generate combined and/or per-participant ongoing (induced)
+  and evoked power spectra in addition to its event-locked time-series
+  plots. The colour-onset one is **`gameNFv6.m`-specific** — it needs that
+  variant's trigger 50 and its `ColorOnsetTime` CSV column, and errors out
+  clearly on earlier variants' data. It also prints a neurofeedback reveal
+  summary (what fraction of trials reached colour onset, and how long after
+  the cue), and warns if fewer than half did, since the locked plots are
+  then computed on a self-selected minority of trials.
 - `analysis/online_view.py` — interactive GDF playback viewer with live
   signals, FFT power, FFT phase, selected-channel averages, and automatic
   joining of numbered GDF recording chunks.
 
 ## Running it
 
-Open and run `gameNFv5.m` in MATLAB with PsychToolbox installed (earlier
+Open and run `gameNFv6.m` in MATLAB with PsychToolbox installed (the other
 `gameNF*.m` variants and the scripts in `legacy/` are documented below but
-are no longer the ones to run). On Windows you'll be prompted for
-participant number, block number, and whether to run eye tracking; on mac
-these default automatically (participant/block `000`, eye tracking off) so
-it just launches straight into the task.
+are not the ones to run).
 
-Before the block starts, a one-time instructions screen explains the task
-in text and shows two **static** (non-moving) example leaves. In
-`gameNFv5.m` those show the colour → button mapping (orange on the left
-labeled "press the LEFT button", blue on the right labeled "press the RIGHT
-button"); in `gameNFv4.m` and earlier they instead showed the colour → rule
-mapping ("use its POINTING direction" / "use its MOVING direction"). Press
-any key/button on that screen to begin; ESC exits at any point during the
-block. All tunable values (timing, leaf size/speed/count, colors, SSVEP
-frequencies, cue rectangle, and the neurofeedback window/thresholds) are in
-the `%% PARAMETERS` block near the top of the script.
+**Set the `testing` flag on the first screenful of the script before each
+run.** `gameNFv6.m` selects its run mode from that flag rather than from
+`ismac` the way `gameNFv5.m` and earlier do:
+
+- `testing = true` — laptop testing. Skips the Cedrus/serial setup, defaults
+  participant and block to `000` with eye tracking off, skips PsychToolbox's
+  sync tests, and opens on `testingStimulusScreenNumber` (PTB screen `2`, the
+  external monitor on the testing laptop — the script errors out with the
+  available screen list if that display isn't attached). Responses come from
+  the arrow keys, and dropped-frame logging is off because it isn't
+  meaningful without real vsync timing.
+- `testing = false` — experiment-room hardware. Prompts for participant
+  number, block number and whether to run eye tracking, opens the Cedrus box
+  and the trigger serial port, and uses the highest-numbered screen.
+
+Before the block starts, a one-time instructions screen explains the task in
+text and shows two **static** (non-moving) example leaves illustrating the
+colour → rule mapping ("use its POINTING direction" / "use its MOVING
+direction"), as in `gameNFv4.m`. (`gameNFv5.m`, on its own branch, instead
+shows the colour → button mapping its colour-report task needs.) Press any
+key/button on that screen to begin; ESC exits at any point during the block.
+
+All tunable values — timing, leaf size/speed/count, colors, SSVEP
+frequencies, cue rectangle, and the neurofeedback integrator/green-zone
+parameters — are in the `%% PARAMETERS` block near the top of the script.
+The first one to retune on real EEG is `nfLevelRatePerUnitNf`: it sets how
+fast the leaves brighten per unit of neurofeedback, and therefore how often
+participants reach the colour reveal at all.
 
 ## GDF playback viewer
 
@@ -516,12 +584,15 @@ its requested deadline the flip actually landed.
 
 ## Windowed-neurofeedback variant (`gameNFv4.m`)
 
-`gameNFv4.m` was the current neurofeedback variant until `gameNFv5.m`
-(below) superseded it — an independent copy of `gameNFv3.m` (itself a copy of `gameNFv2.m` with the direction-balancing
-scheme described under [Stimuli](#stimuli)), changing only *what statistic
-the leaf color is driven by*. Everything else — the CIELAB Delta E color
-mapping, the real-time-anchored SSVEP phase, dropped-frame logging, the
-`nf.txt` protocol, triggers, trial flow — is unchanged from `gameNFv2.m`.
+`gameNFv4.m` is the common ancestor of both later variants — `gameNFv5.m`
+changed its cue and response, and `gameNFv6.m` (the script that runs today)
+independently changed its neurofeedback while keeping the cue and response
+as they are here. It is itself an independent copy of `gameNFv3.m` (a copy
+of `gameNFv2.m` with the direction-balancing scheme described under
+[Stimuli](#stimuli)), changing only *what statistic the leaf color is driven
+by*. Everything else — the CIELAB Delta E color mapping, the
+real-time-anchored SSVEP phase, dropped-frame logging, the `nf.txt`
+protocol, triggers, trial flow — is unchanged from `gameNFv2.m`.
 
 **The problem.** In every earlier NF variant the leaf fill tracks the
 *instantaneous* value read from `nf.txt`. Real-time SSVEP power
@@ -610,13 +681,17 @@ column because the window is pre-filled and therefore always full.
 
 ## Colour-report variant (`gameNFv5.m`)
 
-`gameNFv5.m` is the **current** variant and the script to run — an
-independent copy of `gameNFv4.m` that leaves the neurofeedback completely
-untouched (same windowed sustained-success statistic and its three
-parameters, same CIELAB Delta E colour mapping, same `nf.txt` protocol and
-per-frame read cadence, same SSVEP tagging, timing, jitter, triggers,
-dropped-frame logging and NF-trace CSV) and changes only **what the cue says
-and what the participant reports**.
+`gameNFv5.m` is a **branch off `gameNFv4.m`, parallel to `gameNFv6.m` rather
+than replaced by it** — the two change opposite halves of the same parent,
+and neither contains the other's changes. It is an independent copy of
+`gameNFv4.m` that leaves the neurofeedback completely untouched (same
+windowed sustained-success statistic and its three parameters, same CIELAB
+Delta E colour mapping, same `nf.txt` protocol and per-frame read cadence,
+same SSVEP tagging, timing, jitter, triggers, dropped-frame logging and
+NF-trace CSV) and changes only **what the cue says and what the participant
+reports**. The script that runs today is `gameNFv6.m`, which took the other
+option: it kept this cue and response as `gameNFv4.m` had them and replaced
+the neurofeedback instead.
 
 **The cue is a feature + a direction.** Instead of a coloured box saying
 "Pointing"/"Moving", the box shows two lines — the feature above the
@@ -697,6 +772,147 @@ working unchanged. `CorrectResponse`/`ParticipantResponse` now hold
 the timestamp of the first post-cue frame actually displayed with
 `nfDrive > 0`, taken after that frame's flip like `CueOnsetTime`, and is
 `NaN` on trials where the colours never appeared.
+
+## Grayscale-integrator neurofeedback variant (`gameNFv6.m`)
+
+`gameNFv6.m` is the **current variant and the script to run**. It branches
+off **`gameNFv4.m`, not `gameNFv5.m`**: the cue and the goal are
+`gameNFv4.m`'s (the centre box turns `colorC1`/`colorC2` and says
+`Pointing`/`Moving`, and the participant reports that flock's pointing or
+moving direction with the four direction buttons — there is no colour-report
+task here). What it changes is how the neurofeedback looks, how it
+accumulates, and when a response is allowed.
+
+**A black display and a full-range flicker.** The background is pure black
+instead of grey, and the SSVEP border sinusoid runs pure black → pure white
+instead of black → mid-grey (`colorBorderHigh = white`). At the start of a
+trial the leaf fill is also pure black, so a leaf reads as nothing but its
+own flickering outline. The pre-cue centre box gets its own dim grey
+(`colorCueRectPreCue = [64 64 64]`), since `gameNFv4.m`'s black box would be
+invisible on the new background.
+
+**The NF is an integrator, not a windowed statistic.** `gameNFv4.m`'s rolling
+window and its CIELAB Delta E colour interpolation are gone —
+`nfWindowSec`, `nfValueThreshold`, `nfProportionThreshold`,
+`nfBaselineDeltaE`, `computeNfLeafColor.m` and `srgb2lab.m` are no longer
+used by this variant. In their place is one accumulated grayscale level,
+`nfLevel ∈ [0, 1]`, stepped once per displayed frame:
+
+```
+nfLevel <- clip(nfLevel + nfLevelStepPerUnitNfPerFrame * nfValue, 0, 1)
+```
+
+where `nfValue` is that frame's `nf.txt` reading clipped to
+`±nfValueClipLimit`. Positive NF steps the leaves whiter, negative steps them
+blacker, in proportion to its magnitude; at pure black or pure white the
+level stops moving in that direction but is immediately free to move back the
+other way. **Both flocks share one level and render identically** — `nf.txt`
+gives one signed number per frame (lateralisation towards *this trial's* cued
+frequency), not a per-flock quantity. Until the reveal the two flocks are
+therefore visually indistinguishable, so the participant cannot pick which to
+attend by looking; they can only tell they are on the right one because the
+level climbs. That was already true of `gameNFv4.m` as configured (its
+`nfBaselineDeltaE` was `0`), but `gameNFv6.m` makes it structural.
+
+The integrator is its own low-pass filter, which is why the window is no
+longer needed: a single unlucky ~100 ms sample moves the level by at most
+`nfLevelRatePerUnitNf * 0.1` and is undone by the next good one. The cost is
+memory — the level is a running total, so it can sit high for a moment on
+credit earned earlier in the trial. The level integrates from **cue onset**
+only (not trial start, as `gameNFv4.m`'s window did) and resets to 0 every
+trial, so the black→white distance is identical on every trial.
+
+**Green zone and the colour reveal.** The top `nfWhiteTopRelaxation` of the
+level is the "green zone". While `nfLevel` is inside it the leaves render as
+one **fixed** green-tinted white — fixed, i.e. it stops tracking `nfLevel`,
+so entering the zone reads as a discrete state change rather than more of the
+same ramp. The level keeps integrating underneath and can fall back out.
+Holding the zone **continuously** for `nfGreenHoldSec` reveals the flocks'
+true colours at full saturation; dropping out resets the hold to zero and it
+has to be earned again from scratch. Once revealed the colours are **latched
+for the rest of the trial** and never fade back out, whatever the NF does
+afterwards.
+
+Parameters (all in the `%% PARAMETERS` block):
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `nfLevelRatePerUnitNf` | `1.000` | level units per second at \|NF\| = 1 — so 1.0 means pure black → pure white in 1 s of sustained NF = 1 |
+| `nfValueClipLimit` | `1.000` | NF magnitude is clipped here before stepping (`nf.txt`'s SMI values are ~[-1, 1]) |
+| `nfWhiteTopRelaxation` | `0.05` | green zone = the top 5% of the level, i.e. `nfLevel >= 0.95` |
+| `nfGreenHoldSec` | `1.000` | continuous time in the green zone required to reveal the colours |
+| `nfGreenTintStrength` | `0.30` | how green the green-zone white is: the fraction R and B are pulled down by |
+
+The rate is specified **per second** and converted to a per-frame step once
+the real refresh rate is measured, like every other timing constant in the
+script — specifying the step per flip directly would silently make the NF
+faster or slower on a rig with a different refresh rate. Raise
+`nfLevelRatePerUnitNf` for a more responsive, twitchier display; lower it for
+a smoother, more sluggish one. It is the first number to retune if
+participants rarely or always reach the reveal.
+
+**No response before colour onset, and two separate timeouts.** Responses are
+only read once the colours are out — before that the participant has nothing
+to answer from, so anything pressed is a guess and is ignored (on the Cedrus,
+the `resettimer()` at colour onset also flushes the button queue, so presses
+made during the NF phase cannot be dequeued as an instant response). This
+splits `gameNFv4.m`'s single post-cue window in two, so that a participant
+who earns the reveal late doesn't get a response deadline that silently
+shrank with their own NF performance:
+
+| Parameter | Default | Window |
+| --- | --- | --- |
+| `nfRevealTimeoutSec` | `10.000` | from **cue onset**, time to earn the reveal. Expires → `RevealTimeout = 1`, no response taken |
+| `responseTimeoutSec` | `4.000` | from **colour onset**, time to then answer. Expires → `ResponseTimeout = 1` |
+
+The two are mutually exclusive. `responseTimeoutSec` is back to `gamev1.m`'s
+4 s because `nfRevealTimeoutSec` now covers the NF work that
+`gameNFv4.m`'s 10 s had to cover as well. `ReactionTime` is measured from
+**colour onset**, not cue onset; `CueOnsetTime` is still logged so
+time-from-cue stays recoverable offline.
+
+**New trigger.** Colour onset sends `success` (**50**), timestamped after the
+flip that first presented the reveal, exactly like `cueonset`. It is sent at
+most once per trial and not at all on a trial that never revealed, so
+downstream code should treat it as legitimately absent (the same way
+`response` is absent on a timeout). No new trigger code was added to
+`functions/cog_send_triggers.m` — `success` was unused by this task and is
+exactly what the event means.
+
+**CSV output differences.** The dropped-frame CSV is unchanged. The main
+per-trial CSV gains three columns and changes one meaning:
+
+```
+TrialNumber, TrialStart, C1PointDir, C1MoveDir, C2PointDir, C2MoveDir, Cue,
+CueOnsetTime, FirstGreenTime, ColorOnsetTime, CorrectResponse,
+ParticipantResponse, Accuracy, ReactionTime, RevealTimeout, ResponseTimeout,
+TrialEnd, DroppedFrameCount
+```
+
+`FirstGreenTime` is the first moment the level entered the green zone —
+diagnostic, it separates "never got near white" from "got there but couldn't
+hold it". `ColorOnsetTime` is the reveal itself, and `NaN` on a trial that
+never revealed. `RevealTimeout` is the new failure mode described above.
+`ReactionTime` is now from colour onset.
+
+The NF trace CSV replaces `gameNFv4.m`'s `NFWindowProportion`/`NFDrive` with
+the integrator's state:
+
+```
+TrialNumber, FrameNumber, SampleTime, NFIndexUsed, NFValueRaw, NFValueClipped,
+NFLevel, InGreenZone, GreenHoldSec, ColorsRevealed, PostCueOnset, NFReadOk
+```
+
+`NFValueClipped` is now the signed value clipped to `±nfValueClipLimit` —
+exactly what the step was computed from — rather than `gameNFv4.m`'s purely
+diagnostic `[0, 1]` clip. It is still only sampled every
+`nfTraceLogIntervalSec` (~100 ms) even though the level moves every frame,
+because the level is a deterministic function of the logged raw stream and
+the parameters and so stays reconstructible at full frame resolution offline.
+
+**Analysis.** `analysis/gameNFSSVEPColorOnsetLocked.m` is the matching
+offline analysis, locked to colour onset (trigger 50). See
+[Project layout](#project-layout).
 
 ## Breakout task (`gameBreakout.m`)
 

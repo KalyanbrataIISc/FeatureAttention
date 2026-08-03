@@ -16,6 +16,14 @@ function [validResponse, participantResponse, reactionTime] = getColorResponse( 
 % reactionTime is measured from responseOnsetTime (the cue onset timestamp)
 % in both cases - on Windows from the Cedrus box's own timer, which the
 % caller resets at cue onset.
+%
+% responseOnsetTime must be a RAW GetSecs value, not a
+% getElapsedTime(experimentStartTime) one: the mac branch computes
+% GetSecs - responseOnsetTime, so a time already expressed relative to
+% experiment start yields roughly "seconds since boot" instead of a
+% reaction time. Callers log the relative value to CSV but pass the
+% absolute one here (see cueOnsetAbsTime in gameNFv5.m). The Windows branch
+% ignores it entirely and uses the Cedrus timer described above.
 
     validResponse = false;
     participantResponse = 'missed';

@@ -73,3 +73,18 @@ Instead of mapping the corresponding neurofeedback values directly control the c
  CUE:
  The cue will now not be a colour, but a direction and a feature. Suppose, c1 is moving in d1 and pointing at d2, and c2 is moving on d3 and pointing at d4. There can 4 possible cues (all must occur as uniform as possible) moving d1, moving d3, pointing d2 and pointing d4. This will always cue the participant toards one of the two goups. And the participant have to report the colour in cedrus, (left button = orange, right button = blue). All the game mechanics, data logging and nescessary things must be updated accordingly.
  Before doing it, tell me what you understand, ask if any doubt, and your plan of implementation. Then I will aprove, and you can implement it.
+
+ ---
+
+ Here we will implement a new neurofeedback mechanism.
+ SSVEP flicker: The SSVEP flickering will happen against a complete black back background. The flickering will be from pure black to pure white, sinusoidally.
+
+ The NF: The neurofeedback will be given by changing the inside grayscale colour of the leaves. It will start from pure black and can go to pure white. Each positive value of the NF will step up the whiteness by a little step at every screen flip, and step will be linearly sized based on the magnitude of NF. If it is negetive, whiteness goes down. After reaching full black or white, it cannot go any further in that direction when it goes negetive/positive respectively but can go the other way around if the NF is such. On reaching almost full white (5% relaxation), a little green tint will appear on the whiteness (non changing). Participant will have to keep it green for a certain period of time (say 1s), then the colours will appear fully. Colours will not be adjusted directly by NF values.
+
+ Game goal: Game cue and goal remains same as gameNFv4 and not v5.
+
+ The step scale (how much jump per unit NF), white top relaxation percentage, green keeping time, etc other variables must be remain as parameters.
+
+  Tell me what you understood, and how you are going to implement first. Then upon aproval you will edit this copy. DO not edit any other files.
+
+  No response should be taken before the colour onset. Once colour onset has happend, it does not go away irrespective of NF. Send a trigger at colour onset too.  And also add a new analysis code for this game, with lock at colour onset.

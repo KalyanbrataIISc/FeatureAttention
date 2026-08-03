@@ -109,10 +109,13 @@ function plotSsvepLockedToEvent(trials, eventFieldName, stepSec, maxPreEventSec,
             markerTimesSec = [cueTrials.(markerEventFieldName)] - [cueTrials.(eventFieldName)];
             markerTimesSec = markerTimesSec(isfinite(markerTimesSec));
         end
-        if strcmp(eventLabel, 'cue onset')
-            eventNameShort = 'Cue';
-        else
-            eventNameShort = 'Response';
+        switch eventLabel
+            case 'cue onset'
+                eventNameShort = 'Cue';
+            case 'colour onset'
+                eventNameShort = 'Colour';
+            otherwise
+                eventNameShort = 'Response';
         end
         if numel(participantCounts) == 1
             figureName = sprintf('P%d %s %s', participantCounts, eventNameShort, cueCodes{cueIdx});

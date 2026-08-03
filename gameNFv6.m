@@ -1,4 +1,20 @@
-% Copy of v4
+% gameNFv6.m - grayscale-integrator neurofeedback variant.
+%
+% Copy of gameNFv4.m (same cue and same goal: the center box turns colorC1
+% or colorC2 and says 'Pointing'/'Moving', and the participant reports that
+% flock's pointing/moving direction - NOT gameNFv5.m's colour-report task),
+% changing only how the neurofeedback is rendered and when a response is
+% allowed. See the NEUROFEEDBACK PARAMETERS block below for the full
+% mechanism; in short:
+%
+%   - the background is pure black and the SSVEP border flickers pure black
+%     to pure white, instead of grey/mid-grey;
+%   - the leaf fill is a single grayscale level shared by both flocks that
+%     the NF *integrates* up and down every frame, instead of gameNFv4.m's
+%     windowed sustained-success statistic mapped through CIELAB;
+%   - holding that level in the top few percent (the "green zone") for
+%     nfGreenHoldSec reveals the flocks' true colours, permanently for the
+%     rest of the trial, and only then is a response accepted.
 
 %% Initialise
 clc;        % Clears the Command Window
@@ -57,20 +73,41 @@ csvBaseDir = fullfile(experimentRoot, 'data');
 if ~exist(csvBaseDir, 'dir')
     mkdir(csvBaseDir);
 end
+% v6: three new columns, and one changed meaning.
+%   FirstGreenTime  - first moment the NF level entered the green zone this
+%                     trial (NaN if it never did). Diagnostic: it separates
+%                     "never got near white" from "got there but couldn't
+%                     hold it" for a trial that never revealed.
+%   ColorOnsetTime  - the moment the flocks' true colours were revealed,
+%                     i.e. the green zone had been held for nfGreenHoldSec
+%                     (NaN if that never happened). This is the event the
+%                     response window opens at and the event ReactionTime is
+%                     measured from, so it is needed to interpret either.
+%   RevealTimeout   - 1 if the trial ended because colours never appeared
+%                     within nfRevealTimeoutSec of cue onset. Distinct from
+%                     ResponseTimeout, which now means the colours DID
+%                     appear but no response followed within
+%                     responseTimeoutSec. The two are mutually exclusive.
+% ReactionTime is now measured from colour onset, not cue onset, since no
+% response is accepted before then. CueOnsetTime is still logged, so
+% time-from-cue is recoverable offline.
 csvHeader = ['TrialNumber,TrialStart,C1PointDir,C1MoveDir,C2PointDir,C2MoveDir,Cue,CueOnsetTime,' ...
-    'CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,ResponseTimeout,TrialEnd,DroppedFrameCount'];
+    'FirstGreenTime,ColorOnsetTime,CorrectResponse,ParticipantResponse,Accuracy,ReactionTime,' ...
+    'RevealTimeout,ResponseTimeout,TrialEnd,DroppedFrameCount'];
 csvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_trialdata.csv', sessionTag), csvHeader);
 
 % Per-~100ms NF trace (one row per nfTraceLogIntervalSec), separate file so
 % the one-row-per-trial main CSV above stays unchanged in shape.
-% v4: NFWindowProportion/NFDrive record the rolling-window statistic that
-% actually drives the leaf color now (see NEUROFEEDBACK PARAMETERS below);
-% NFValueRaw/NFValueClipped are kept so the underlying raw stream the
-% window was computed from stays auditable offline. There's no window-fill
-% column because the window is pre-filled with zeros at trial start and so
-% is always exactly nfWindowFrames long.
+% v6: v4's NFWindowProportion/NFDrive are gone with the rolling window they
+% came from, replaced by the integrator's state (see NEUROFEEDBACK
+% PARAMETERS below): NFLevel is the 0-1 grayscale level actually on screen,
+% InGreenZone/GreenHoldSec/ColorsRevealed are the reveal state machine.
+% NFValueRaw is the value read from nf.txt and NFValueClipped is that value
+% clipped to +/-nfValueClipLimit, i.e. exactly what the step was computed
+% from - both are kept so the level's trajectory stays reconstructible
+% offline from the raw stream alone.
 nfTraceCsvHeader = ['TrialNumber,FrameNumber,SampleTime,NFIndexUsed,' ...
-    'NFValueRaw,NFValueClipped,NFWindowProportion,NFDrive,PostCueOnset,NFReadOk'];
+    'NFValueRaw,NFValueClipped,NFLevel,InGreenZone,GreenHoldSec,ColorsRevealed,PostCueOnset,NFReadOk'];
 nfTraceCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_nftrace.csv', sessionTag), nfTraceCsvHeader);
 
 % Dropped/delayed-frame log (v2 only): one row per frame whose Screen('Flip')
@@ -110,7 +147,9 @@ if ~exist('paraport','var')
 end
 
 %% Display colors
-grey  = [128 128 128];
+% v6 dropped gameNFv4.m's `grey` from this palette: nothing is drawn in it
+% any more now that the background is black and the leaf fill is a
+% computed grayscale level rather than an interpolation away from grey.
 black = [0 0 0];
 white = [255 255 255];
 green = [0 255 0];
@@ -188,9 +227,21 @@ end
 preCueConstantSec   = 1.000;  % fixed foreperiod before the hazard-uniform jitter
 preCueExpMeanSec    = 3.000;  % mean of the exponential jitter added to the foreperiod
 preCueExpMaxSec     = 5.000;  % truncation cap on the exponential jitter (keeps trials bounded)
-responseTimeoutSec  = 10.000;  % response window, timed from cue onset - longer than gamev1.m's
-% 4s to give the participant time to work with the NF-driven leaf coloring
-% (see NEUROFEEDBACK PARAMETERS below) before the window closes.
+% v6: the single post-cue window gameNFv4.m had is now split in two, because
+% no response is accepted until the neurofeedback has revealed the colours
+% (see NEUROFEEDBACK PARAMETERS below). Leaving it as one window would have
+% meant a participant who only earned the reveal late in the trial got
+% whatever was left of it to actually answer in - i.e. a response deadline
+% that silently varied with their own NF performance.
+%   nfRevealTimeoutSec - from cue onset, how long they get to earn the
+%       reveal. Expires -> trial ends, RevealTimeout = 1, no response.
+%   responseTimeoutSec - from COLOUR onset, how long they then get to
+%       answer. Expires -> trial ends, ResponseTimeout = 1.
+% Worst case a trial therefore runs preCue + both windows + feedback.
+nfRevealTimeoutSec  = 10.000; % time from cue onset to earn the colour reveal
+responseTimeoutSec  = 4.000;  % response window, timed from colour onset. Back to
+% gamev1.m's 4s: gameNFv4.m's 10s was long because the same window had to
+% cover the NF work as well, which nfRevealTimeoutSec now covers separately.
 feedbackDurationSec = 1.000;  % 'Correct'/'Incorrect' feedback display time
 itiDurationSec      = 1.000;  % blank inter-trial interval
 
@@ -201,7 +252,7 @@ itiDurationSec      = 1.000;  % blank inter-trial interval
 % down, or tweak one multiplier below if only that dimension needs to move.
 fieldMarginPx = 0; % inset from the screen edge - 0 uses the full screen, leaves may clip at the edge
 
-leafSizePx = 90; % base leaf size (= leaf length in px)
+leafSizePx = 180; % base leaf size (= leaf length in px)
 leafWidthMultiplier           = 0.42; % leafWidthPx           = leafSizePx * leafWidthMultiplier
 leafBorderThicknessMultiplier = 0.20; % leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier
 minLeafSeparationMultiplier   = 1.10; % minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier
@@ -212,7 +263,7 @@ leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier; % extra thic
 minLeafSeparationPx   = leafSizePx * minLeafSeparationMultiplier;   % minimum center-to-center distance enforced between any two leaves
 leafSpeedPxPerSec     = 200;
 leafLifetimeSec       = 1.0; % how long a single leaf stays on screen before it respawns elsewhere
-numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^2).
+numLeavesPerFlock     = 10;  % density = numLeavesPerFlock / (screen area in px^2).
 % Each leaf needs a minLeafSeparationPx clearance bubble around it, so the
 % field can only physically fit so many before the placement algorithm
 % can no longer find room and starts force-respawning leaves almost every
@@ -222,26 +273,36 @@ numLeavesPerFlock     = 20;  % density = numLeavesPerFlock / (screen area in px^
 % starts thrashing past ~30/flock - raise gradually and watch for that
 % symptom coming back.
 
-% Cue rectangle (same object throughout the trial: neutral/black pre-cue,
-% solid colorC1/colorC2 with 'Pointing'/'Moving' written inside from cue
-% onset on, switching to the 'Correct'/'Incorrect' feedback text - in the
-% same box - once a response is given)
+% Cue rectangle (same object throughout the trial: neutral pre-cue, solid
+% colorC1/colorC2 with 'Pointing'/'Moving' written inside from cue onset on,
+% switching to the 'Correct'/'Incorrect' feedback text - in the same box -
+% once a response is given)
 cueRectWidthPx       = 220;
 cueRectHeightPx      = 90;
 cueRectCornerRadiusPx = 20;
 cueTextSize          = 32;
 colorCueText         = black;
+% v6: gameNFv4.m's pre-cue box was black on a grey background; on v6's black
+% background that box would be invisible, so it gets its own dim grey. Kept
+% dim deliberately - it sits at fixation for the whole pre-cue period, and a
+% bright box there is a large luminance step into cue onset in an SSVEP
+% recording.
+colorCueRectPreCue   = [64 64 64];
 
 % Instructions screen (shown once, before the block starts)
 instructionsTextSize = 25;
 
 % Colors
+% v6: the whole display sits on pure black now, not grey, and the SSVEP
+% border flickers the full black-to-white range rather than black to
+% mid-grey. Combined with a leaf fill that starts at pure black (= the
+% background), a leaf at the start of a trial reads as nothing but its own
+% flickering outline.
+backgroundColor = black;
 colorC1        = [0 191 255];              % c1 flock/cue color (deep sky blue)
 colorC2        = [255 140 0];              % c2 flock/cue color (dark orange)
-% SSVEPContrastGap = 150;
-% shiftValue = round((255 - 100)/2);
 colorBorderLow  = black;  % SSVEP flicker low-luminance border color
-colorBorderHigh = round(white/2);  % SSVEP flicker high-luminance border color
+colorBorderHigh = white;  % SSVEP flicker high-luminance border color
 
 % SSVEP tagging frequencies (Hz)
 freqC1Hz = 19;
@@ -249,24 +310,18 @@ freqC2Hz = 23;
 
 % =================== NEUROFEEDBACK (SSVEP lateralisation) ===================
 % The NF stimulus is the leaf fill color itself. Before cue onset, and at
-% zero/wrong-direction lateralisation after cue onset, each flock's fill is
-% exactly `grey` - the same solid color the background is filled with - so
-% the leaf body is indistinguishable from the background (only the
-% flickering SSVEP border ring, a separate, larger polygon drawn underneath
-% and never touched by any of this, stays visible). From cue onset, fill
-% moves from grey toward the flock's own cue color (colorC1/colorC2) in
-% proportion to real-time SSVEP power lateralisation favoring this trial's
-% cued frequency - i.e. the leaves become more distinctly colored the more
-% the participant's SSVEP is lateralised the right way.
+% zero level after cue onset, that fill is exactly `backgroundColor` (pure
+% black) - the same solid color the background is filled with - so the leaf
+% body is indistinguishable from the background and only the flickering
+% SSVEP border ring (a separate, larger polygon drawn underneath and never
+% touched by any of this) stays visible. From cue onset the fill is a
+% grayscale level the NF drives up and down; see the v6 block further down
+% for the mechanism, and note that the flocks' true colors (colorC1 /
+% colorC2) are NOT what the NF interpolates towards any more - they appear
+% all at once, as a reward, and are then fixed for the rest of the trial.
 %
-% Right at cue onset, a small fixed baseline reveal is applied regardless
-% of the live NF value - a deliberate, immediate, subtle glimpse of each
-% flock's true color so the participant can tell the two flocks apart and
-% knows where to start attending, rather than waiting on their own
-% not-yet-achieved correct lateralisation to reveal it. This is driven
-% purely off nf.txt (written externally by RT_acquisition_8) - no
-% moving-average window is applied here, unlike that prior experiment.
-% nf.txt is re-read fresh every displayed frame (not held between reads),
+% All of it is driven purely off nf.txt (written externally by
+% RT_acquisition_8). nf.txt is re-read fresh every displayed frame (not held between reads),
 % since it's only the file's own external rewrite that happens on a ~100ms
 % cadence - reading on our own fixed 100ms clock could be out of phase with
 % that and add up to ~100ms of pure latency for no reason.
@@ -286,75 +341,74 @@ nfTraceLogIntervalSec = 0.100;  % NF trace CSV is still logged only this often (
 nfIndexC1           = 1;      % nf.txt column: positive when 19Hz (c1) SSVEP power exceeds 23Hz
 nfIndexC2           = 2;      % nf.txt column: positive when 23Hz (c2) SSVEP power exceeds 19Hz
 
-% v4: the leaf fill is NOT driven by the instantaneous NF value. Raw SSVEP
-% lateralisation is very flickery on a ~100ms cadence, so mapping it
-% directly onto color made the leaves visibly jitter. Instead the color is
-% driven by a *sustained-success* statistic over a trailing window:
+% ---------------------------- v6: the integrator ---------------------------
+% gameNFv4.m mapped a windowed sustained-success statistic onto a CIELAB
+% interpolation between grey and each flock's own color. v6 replaces that
+% whole path (nfWindowSec / nfValueThreshold / nfProportionThreshold,
+% computeNfLeafColor, srgb2lab and the Delta E calibration are all gone)
+% with a single accumulated grayscale level, nfLevel, in [0, 1]:
 %
-%   1. every displayed frame's NF value goes into a rolling nfWindowSec
-%      window, re-zeroed at each trial start;
-%   2. nfAboveProportion = fraction of that window strictly above
-%      nfValueThreshold - i.e. the proportion of the last nfWindowSec of
-%      *time* the participant held a good-enough lateralisation;
-%   3. that proportion is thresholded and rescaled: at or below
-%      nfProportionThreshold the drive is 0 (leaves stay at the fixed
-%      cue-onset reveal), and the remaining top slice
-%      [nfProportionThreshold, 1] maps linearly onto drive [0, 1], which
-%      is what computeNfLeafColor now receives in place of the raw value.
+%     nfLevel <- clip(nfLevel + nfLevelStepPerUnitNfPerFrame * nfValue, 0, 1)
 %
-% Sampling per displayed frame rather than once per new nf.txt write is
-% deliberate: nf.txt only changes every ~100ms, so consecutive frames
-% repeat the same value ~6 times over, which is exactly what makes the
-% proportion a proportion of elapsed time rather than of samples - it stays
-% correct even when the external process's write cadence jitters.
+% applied once per displayed frame, where nfValue is this frame's nf.txt
+% reading clipped to +/-nfValueClipLimit. So a positive NF steps the leaves
+% whiter and a negative one steps them blacker, by an amount proportional to
+% its magnitude; at pure black or pure white the level simply stops moving
+% in that direction, but is immediately free to move back the other way.
 %
-% The trade this buys - smoothness at the cost of latency - is set by these
-% three numbers, and the latencies they imply follow directly:
-%   first color   = nfProportionThreshold * nfWindowSec       (0.8s here)
-%   full color    = nfWindowSec                               (1.0s here)
-%   back to grey  = (1 - nfProportionThreshold) * nfWindowSec (0.2s here)
-% i.e. success has to be *earned* over most of a window, but is lost again
-% quickly - raising nfProportionThreshold sharpens both. Retune here.
+% Both flocks share one level and therefore render identically. That is
+% forced by the signal: nf.txt gives one signed number per frame (the
+% lateralisation towards *this trial's cued* frequency, see nfIndexC1/C2
+% below), not a per-flock quantity. Note the consequence - until the reveal
+% the two flocks are visually indistinguishable, so the participant cannot
+% pick which one to attend by looking; they can only tell they are attending
+% the right one because the level climbs. That was already true of
+% gameNFv4.m as configured (its nfBaselineDeltaE was 0, so its leaves also
+% started identical), but v6 makes it structural.
 %
-% nfValueThreshold at 0.001 is deliberately just-above-zero: a sample counts
-% as a success if the lateralisation favours the cued frequency *at all*.
-% The statistic is therefore effectively a sign test - "what fraction of the
-% last nfWindowSec did SSVEP lean the right way" - rather than a test of how
-% strongly it leaned. Raise it to demand a minimum magnitude too.
+% Smoothing comes for free here, which is why v6 can drop v4's window: the
+% integrator IS a low-pass filter. A single unlucky ~100ms sample moves the
+% level by at most nfLevelRatePerUnitNf * 0.1 and is undone by the next good
+% one, instead of jumping the color the way the instantaneous mapping in
+% gameNFv3.m did. The cost is that the level is a running total, so it has
+% memory: it can sit high for a moment on borrowed credit from earlier in
+% the trial. Raise nfLevelRatePerUnitNf for a more responsive, twitchier
+% display; lower it for a smoother, more sluggish one.
 %
-% The window starts each trial pre-filled with zeros and is therefore
-% always exactly nfWindowFrames long - the proportion's denominator never
-% changes. This matters at the start of a trial: a window sized to only
-% the samples collected so far would let one lucky above-threshold sample
-% on frame 1 read as a proportion of 1.0 and drive full color, and more
-% generally would make the statistic wildly noisy until nfWindowSec had
-% elapsed. Pre-filled zeros count as below-threshold failures instead, so
-% color can only ever appear after a genuinely sustained run of successes
-% - a minimum of nfProportionThreshold * nfWindowSec = 0.8s from trial
-% start, and the full 1.0s for saturation, no matter how short that trial's
-% pre-cue period happens to be.
+% The rate is specified per SECOND and converted to a per-frame step below,
+% once the real refresh rate is known - the same convention every other
+% timing constant in this script follows. Specifying the step per flip
+% directly would silently make the NF dynamics faster or slower on a rig
+% with a different refresh rate.
 %
-% The window then keeps filling from trial start (not cue onset), so it's
-% already carrying real data by the time the color is first shown and
-% there's no ramp-up dead time at cue onset. RT_acquisition_8 zeroes
-% nf.txt at trial start, so the earliest pre-cue samples read ~0 anyway
-% and agree with the pre-filled zeros they replace.
-nfWindowSec           = 1.000;  % trailing window the proportion is computed over
-nfValueThreshold      = 0.001;    % an NF value must exceed this to count as a success
-nfProportionThreshold = 0.80;   % proportion of the window that must be successes before ANY color is revealed
+% The level integrates from CUE ONSET only, not from trial start: before the
+% cue there is nothing to attend to, so any pre-cue accumulation would be
+% noise pre-charging the display. It is reset to 0 at the start of every
+% trial, so the black->white distance is the same on every trial.
+nfLevelRatePerUnitNf = 0.100;  % level units per second at |NF| = 1, i.e. 1.0 -> pure black to pure white in 1s of sustained NF = 1
+nfValueClipLimit     = 1.000;  % NF magnitude is clipped here before stepping (nf.txt's SMI values are ~[-1, 1])
 
-% The fixed cue-onset reveal (and the live-NF reveal growth on top of it)
-% is calibrated in CIELAB Delta E - perceived color difference - rather
-% than a raw RGB blend fraction: a rig test showed the same blend fraction
-% looked clearly more intense for one flock's color than the other's,
-% since equal RGB distance is not equal *perceived* distance across
-% different hues. See helperFunctions/computeNfLeafColor.m.
-nfBaselineDeltaE = 0;  % target CIELAB Delta E for the fixed cue-onset reveal - both flocks match exactly
-labGrey = srgb2lab(grey);
-labC1   = srgb2lab(colorC1);
-labC2   = srgb2lab(colorC2);
-maxDeltaEC1 = norm(labC1 - labGrey);  % this flock's total Lab distance from grey to fully-saturated colorC1
-maxDeltaEC2 = norm(labC2 - labGrey);  % ditto for colorC2 - deliberately not assumed equal to maxDeltaEC1
+% ------------------------- v6: green zone and reveal ------------------------
+% The top nfWhiteTopRelaxation of the level is the "green zone". While
+% nfLevel is in it the leaves render as one fixed green-tinted white
+% (colorNfGreenZone) instead of the plain grayscale - fixed, i.e. it does
+% not keep tracking nfLevel within the zone, so entering it reads as a
+% discrete state change rather than as more of the same ramp. The level
+% itself keeps integrating underneath, so it can and does fall back out.
+%
+% Holding the green zone continuously for nfGreenHoldSec reveals the flocks'
+% true colors (colorC1 / colorC2, at full saturation), which is what the
+% participant needs to answer the trial. The hold is continuous, not
+% cumulative: dropping out of the zone resets it to zero and the hold has to
+% be earned again from scratch. Once the reveal happens it is LATCHED for
+% the rest of the trial - the colors never fade back out, whatever the NF
+% does afterwards - both because the participant needs a stable stimulus to
+% answer against, and because the response window opens at that moment (see
+% nfRevealTimeoutSec / responseTimeoutSec above).
+nfWhiteTopRelaxation = 0.05;   % green zone = the top 5% of the level, i.e. nfLevel >= 0.95
+nfGreenHoldSec       = 1.500;  % continuous time in the green zone required to reveal the colors
+nfGreenTintStrength  = 0.30;   % how green the green-zone white is: fraction the R and B channels are pulled down by
+colorNfGreenZone     = round([255 * (1 - nfGreenTintStrength), 255, 255 * (1 - nfGreenTintStrength)]);
 
 %% Initialise the screen
 screens = Screen('Screens');
@@ -372,7 +426,7 @@ if ~testing && eyeTracking
     EyeTracking(str2double(participantInfo),str2double(blockInfo),'start');
 end
 
-[window, windowRect] = Screen('OpenWindow', screenNumber, grey);
+[window, windowRect] = Screen('OpenWindow', screenNumber, backgroundColor);
 Screen('ColorRange', window, 255);
 Screen('TextSize', window, 40);
 Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
@@ -381,8 +435,8 @@ Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 cueRect = [xCenter - cueRectWidthPx / 2, yCenter - cueRectHeightPx / 2, ...
            xCenter + cueRectWidthPx / 2, yCenter + cueRectHeightPx / 2];
 
-Screen('FillRect', window, grey);
-drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+Screen('FillRect', window, backgroundColor);
+drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
 Screen('Flip', window);
 WaitSecs(1);
 
@@ -397,16 +451,19 @@ topPriorityLevel = MaxPriority(window);
 Priority(topPriorityLevel);
 
 % Frame-based timing
+nfRevealTimeoutFrames = max(1, round(nfRevealTimeoutSec / interFrameInterval));
 responseTimeoutFrames = max(1, round(responseTimeoutSec / interFrameInterval));
 feedbackFrames = max(1, round(feedbackDurationSec / interFrameInterval));
 itiFrames = max(1, round(itiDurationSec / interFrameInterval));
 leafLifetimeFrames = max(1, round(leafLifetimeSec / interFrameInterval));
 nfTraceLogIntervalFrames = max(1, round(nfTraceLogIntervalSec / interFrameInterval));
-nfWindowFrames = max(1, round(nfWindowSec / interFrameInterval));
-% Denominator of the proportion->drive rescale, computed once. max(eps, ...)
-% keeps a (degenerate) nfProportionThreshold of 1 from dividing by zero -
-% it then just means "only a perfect window reveals anything".
-nfProportionSpan = max(eps, 1 - nfProportionThreshold);
+nfGreenHoldFrames = max(1, round(nfGreenHoldSec / interFrameInterval));
+
+% v6 integrator constants, derived once the real refresh rate is known (see
+% the NEUROFEEDBACK PARAMETERS block for why the rate is specified per
+% second rather than per flip).
+nfLevelStepPerUnitNfPerFrame = nfLevelRatePerUnitNf * interFrameInterval;
+nfGreenThreshold = 1 - nfWhiteTopRelaxation;
 
 % Per-frame speed, and the leaf field rect (needs interFrameInterval/windowRect, known only now)
 leafSpeedPxPerFrame = leafSpeedPxPerSec * interFrameInterval;
@@ -445,27 +502,34 @@ try
         'Two groups of leaves move around the screen. Each group points in one\n' ...
         'direction and moves in another direction (up / down / left / right) -\n' ...
         'independently, and both can change from trial to trial.\n\n' ...
-        'At first the leaves are a neutral color. Partway through each trial, the\n' ...
-        'box at the center turns a color and shows "Pointing" or "Moving" - see\n' ...
-        'the two examples below for what each color means.\n\n' ...
-        'Respond as fast and accurately as you can with the direction buttons.\n' ...
-        'The box will then show whether you were Correct or Incorrect.'];
+        'At first only the flickering leaf outlines are visible. Partway through\n' ...
+        'each trial the box at the center turns a color and shows "Pointing" or\n' ...
+        '"Moving" - see the two examples below for what each color means.\n\n' ...
+        'Concentrating on the group the box asks about makes the leaves brighten,\n' ...
+        'from black towards white. Once they are nearly white they turn green:\n' ...
+        'hold them green and their true colors appear.\n\n' ...
+        'Only then can you answer, with the direction buttons - buttons pressed\n' ...
+        'before the colors appear do nothing. The box will then show whether you\n' ...
+        'were Correct or Incorrect.'];
 
-    Screen('FillRect', window, grey);
+    % v6: black background, so the instructions text is white and the demo
+    % leaves get a white outline standing in for their flickering SSVEP
+    % border (gameNFv4.m drew that outline black against its grey screen).
+    Screen('FillRect', window, backgroundColor);
     Screen('TextSize', window, instructionsTextSize);
-    DrawFormattedText(window, instructionsText, 'center', 'center', black, [], [], [], [], [], instructionsRect);
+    DrawFormattedText(window, instructionsText, 'center', 'center', white, [], [], [], [], [], instructionsRect);
 
-    Screen('FillPoly', window, black, bsxfun(@plus, demoOuterShape, demoPosC1));
+    Screen('FillPoly', window, colorBorderHigh, bsxfun(@plus, demoOuterShape, demoPosC1));
     Screen('FillPoly', window, colorC1, bsxfun(@plus, demoInnerShape, demoPosC1));
-    Screen('FillPoly', window, black, bsxfun(@plus, demoOuterShape, demoPosC2));
+    Screen('FillPoly', window, colorBorderHigh, bsxfun(@plus, demoOuterShape, demoPosC2));
     Screen('FillPoly', window, colorC2, bsxfun(@plus, demoInnerShape, demoPosC2));
 
     Screen('TextSize', window, 22);
-    DrawFormattedText(window, 'This color ->\nuse its POINTING\ndirection', 'center', 'center', black, [], [], [], [], [], labelC1Rect);
-    DrawFormattedText(window, 'This color ->\nuse its MOVING\ndirection', 'center', 'center', black, [], [], [], [], [], labelC2Rect);
+    DrawFormattedText(window, 'This color ->\nuse its POINTING\ndirection', 'center', 'center', white, [], [], [], [], [], labelC1Rect);
+    DrawFormattedText(window, 'This color ->\nuse its MOVING\ndirection', 'center', 'center', white, [], [], [], [], [], labelC2Rect);
 
     Screen('TextSize', window, 28);
-    DrawFormattedText(window, 'Press any key or button to begin', 'center', windowRect(4) - 80, black);
+    DrawFormattedText(window, 'Press any key or button to begin', 'center', windowRect(4) - 80, white);
 
     if ~testing
         vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
@@ -510,22 +574,33 @@ try
         % start, since RT_acquisition_8 itself zeroes nf.txt at trial start.
         nfCurrentValueRaw = 0;
 
-        % v4: rolling NF window for this trial (see NEUROFEEDBACK PARAMETERS
-        % above). Re-zeroed per trial so nothing bleeds across trials, and
-        % those starting zeros are themselves the trial's initial window
-        % contents - counted as below-threshold failures, never as missing
-        % samples, so the proportion is always over a full nfWindowFrames.
-        nfWindowBuffer = zeros(1, nfWindowFrames);
-        nfWindowCursor = 0;
-        nfAboveProportion = 0;
-        nfDrive = 0;
+        % v6: integrator and reveal state for this trial (see NEUROFEEDBACK
+        % PARAMETERS above). All re-zeroed per trial so nothing bleeds
+        % across trials - in particular nfLevel always starts at pure black,
+        % so the distance to the green zone is identical on every trial.
+        % (nfValueClipped and inGreenZone are deliberately not seeded here -
+        % both are recomputed from scratch on every frame before anything
+        % reads them, unlike nfLevel/greenHoldFrames/colorsRevealed, which
+        % carry state forward from frame to frame and so must start defined.)
+        nfLevel = 0;
+        greenHoldFrames = 0;
+        colorsRevealed = false;
+        % Frame numbers the two NF events happened on, NaN until they do.
+        % They're recorded here rather than timestamped inline because the
+        % timestamp/trigger has to be taken after the Screen('Flip') that
+        % actually PRESENTS the change, the same way cue onset is handled.
+        firstGreenFrame = NaN;
+        colorOnsetFrame = NaN;
+        responseDeadlineFrame = NaN;  % only known once the colours are revealed
 
         nfTraceFrameNumber = [];
         nfTraceSampleTime = [];
         nfTraceValueRaw = [];
         nfTraceValueClipped = [];
-        nfTraceWindowProportion = [];
-        nfTraceDrive = [];
+        nfTraceLevel = [];
+        nfTraceInGreenZone = [];
+        nfTraceGreenHoldSec = [];
+        nfTraceColorsRevealed = [];
         nfTracePostCue = [];
         nfTraceReadOk = [];
 
@@ -548,6 +623,7 @@ try
         participantResponse = 'missed';
         reactionTime = NaN;
         accuracy = 0;
+        revealTimeout = 0;
         responseTimeout = 0;
         validResponse = false;
         inFeedback = false;
@@ -555,6 +631,11 @@ try
 
         trialStartTime = getElapsedTime(experimentStartTime);
         cueOnsetTime = NaN;
+        % v6: NaN unless the NF actually got there this trial (see the main
+        % CSV header comment near the top for what each one means).
+        firstGreenTime = NaN;
+        colorOnsetTime = NaN;
+        colorOnsetAbsTime = NaN;  % raw GetSecs companion to colorOnsetTime, see the frame loop
 
         disp(trialNumber);
         if ~testing
@@ -576,11 +657,19 @@ try
         % loop starts (the previous trial's final ITI flip, or the
         % instructions-screen flip for trial 1); t=0 for this trial is
         % defined relative to that moment.
+        % v6: the post-cue budget is now two windows end to end, not one -
+        % nfRevealTimeoutFrames to earn the colour reveal and then
+        % responseTimeoutFrames from that reveal to answer. maxFrames sizes
+        % the loop for the worst case (a reveal earned on the very last
+        % frame of the first window); the trial breaks out well before that
+        % in every other case. responseDeadlineFrame can't be computed here
+        % - it hangs off colorOnsetFrame, which the participant determines -
+        % so it's filled in when the reveal actually latches.
         cueDelaySec = preCueConstantSec + truncatedExpRnd(preCueExpMeanSec, preCueExpMaxSec);
         preCueFrames = max(1, round(cueDelaySec / interFrameInterval));
         cueOnsetFrame = preCueFrames + 1;
-        responseDeadlineFrame = preCueFrames + responseTimeoutFrames;
-        maxFrames = preCueFrames + responseTimeoutFrames + feedbackFrames;
+        revealDeadlineFrame = preCueFrames + nfRevealTimeoutFrames;
+        maxFrames = preCueFrames + nfRevealTimeoutFrames + responseTimeoutFrames + feedbackFrames;
         trialSsvepT0 = vbl;
 
         for currentFrame = 1:maxFrames
@@ -600,29 +689,53 @@ try
                 nfCurrentValueRaw = newNfValueRaw;
             end
 
-            % v4: push this frame's value into the rolling window and
-            % recompute the drive. Done every frame regardless of phase (so
-            % the window is already full at cue onset); only the *visual*
-            % use of nfDrive below is gated to post-cue. A stale value from
-            % a failed read is pushed as-is - it's the value that was on
-            % screen for that frame, so counting it is what keeps the
-            % proportion a proportion of elapsed time.
-            nfWindowCursor = mod(nfWindowCursor, nfWindowFrames) + 1;
-            nfWindowBuffer(nfWindowCursor) = nfCurrentValueRaw;
-            nfAboveProportion = sum(nfWindowBuffer > nfValueThreshold) / nfWindowFrames;
-            nfDrive = max(0, (nfAboveProportion - nfProportionThreshold) / nfProportionSpan);
+            % v6: step the integrator by this frame's NF value, then run the
+            % green-zone/reveal state machine off the resulting level (see
+            % NEUROFEEDBACK PARAMETERS above). A stale value from a failed
+            % read is stepped by as-is - it's the value that was on screen
+            % for that frame, so integrating it is what keeps the level a
+            % function of elapsed time rather than of successful reads.
+            nfValueClipped = max(-nfValueClipLimit, min(nfValueClipLimit, nfCurrentValueRaw));
+            if ~isPreCue
+                nfLevel = max(0, min(1, nfLevel + nfLevelStepPerUnitNfPerFrame * nfValueClipped));
+            end
+            inGreenZone = ~isPreCue && nfLevel >= nfGreenThreshold;
+
+            if inGreenZone && isnan(firstGreenFrame)
+                firstGreenFrame = currentFrame;
+            end
+            if ~colorsRevealed
+                if inGreenZone
+                    % Continuous hold: this counter only ever advances on
+                    % consecutive in-zone frames, and any frame out of the
+                    % zone below sends it straight back to zero.
+                    greenHoldFrames = greenHoldFrames + 1;
+                    if greenHoldFrames >= nfGreenHoldFrames
+                        colorsRevealed = true;
+                        colorOnsetFrame = currentFrame;
+                        responseDeadlineFrame = colorOnsetFrame + responseTimeoutFrames;
+                    end
+                else
+                    greenHoldFrames = 0;
+                end
+            end
 
             % The trace CSV is still only logged every nfTraceLogIntervalFrames
             % (~100ms), since nf.txt itself is only rewritten externally on
             % roughly that cadence - logging every frame would just repeat
             % the same unchanged value several times over for no benefit.
+            % The level moves every frame, but it's a deterministic function
+            % of the logged raw stream and the parameters, so it stays
+            % reconstructible at full frame resolution offline.
             if mod(currentFrame - 1, nfTraceLogIntervalFrames) == 0
                 nfTraceFrameNumber(end+1) = currentFrame; %#ok<SAGROW>
                 nfTraceSampleTime(end+1) = getElapsedTime(experimentStartTime); %#ok<SAGROW>
                 nfTraceValueRaw(end+1) = nfCurrentValueRaw; %#ok<SAGROW>
-                nfTraceValueClipped(end+1) = max(0, min(1, nfCurrentValueRaw)); %#ok<SAGROW>
-                nfTraceWindowProportion(end+1) = nfAboveProportion; %#ok<SAGROW>
-                nfTraceDrive(end+1) = nfDrive; %#ok<SAGROW>
+                nfTraceValueClipped(end+1) = nfValueClipped; %#ok<SAGROW>
+                nfTraceLevel(end+1) = nfLevel; %#ok<SAGROW>
+                nfTraceInGreenZone(end+1) = inGreenZone; %#ok<SAGROW>
+                nfTraceGreenHoldSec(end+1) = greenHoldFrames * interFrameInterval; %#ok<SAGROW>
+                nfTraceColorsRevealed(end+1) = colorsRevealed; %#ok<SAGROW>
                 nfTraceReadOk(end+1) = nfReadOk; %#ok<SAGROW>
                 nfTracePostCue(end+1) = ~isPreCue; %#ok<SAGROW>
             end
@@ -640,18 +753,28 @@ try
             [flock1BorderColor, flock2BorderColor] = computeSsvepColorsFromTime( ...
                 ssvepTPredicted, freqC1Hz, freqC2Hz, colorBorderLow, colorBorderHigh);
 
-            Screen('FillRect', window, grey);
+            Screen('FillRect', window, backgroundColor);
             if isPreCue
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
-                    grey, grey, flock1BorderColor, flock2BorderColor);
-                drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+                    backgroundColor, backgroundColor, flock1BorderColor, flock2BorderColor);
+                drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
             else
-                % v4: the color is driven by nfDrive - the windowed
-                % proportion-above-threshold statistic - not by the raw
-                % instantaneous NF value. nfDrive is already in [0, 1], so
-                % computeNfLeafColor's own clip is a no-op here.
-                flock1FillColor = computeNfLeafColor(labGrey, labC1, maxDeltaEC1, nfDrive, nfBaselineDeltaE);
-                flock2FillColor = computeNfLeafColor(labGrey, labC2, maxDeltaEC2, nfDrive, nfBaselineDeltaE);
+                % v6: three mutually exclusive fill states, in priority
+                % order - revealed (latched, both flocks at their own true
+                % color), in the green zone (one fixed green-white for
+                % both), or the plain shared grayscale the integrator is
+                % currently at. Only the last of these tracks nfLevel.
+                if colorsRevealed
+                    flock1FillColor = colorC1;
+                    flock2FillColor = colorC2;
+                elseif inGreenZone
+                    flock1FillColor = colorNfGreenZone;
+                    flock2FillColor = colorNfGreenZone;
+                else
+                    nfGrayValue = round(255 * nfLevel);
+                    flock1FillColor = [nfGrayValue, nfGrayValue, nfGrayValue];
+                    flock2FillColor = flock1FillColor;
+                end
                 drawLeaves(window, leaves, flock1InnerShape, flock1OuterShape, flock2InnerShape, flock2OuterShape, ...
                     flock1FillColor, flock2FillColor, flock1BorderColor, flock2BorderColor);
                 drawRoundedRect(window, cueColor, cueRect, cueRectCornerRadiusPx);
@@ -688,6 +811,40 @@ try
                 end
             end
 
+            % v6: both NF events are timestamped here, immediately after the
+            % flip that first PRESENTED them, exactly like cue onset above -
+            % not where the state machine set them, which is one flip early.
+            if currentFrame == firstGreenFrame
+                firstGreenTime = getElapsedTime(experimentStartTime);
+            end
+            if currentFrame == colorOnsetFrame
+                % Two timestamps for the one event, deliberately: the CSV
+                % wants time-since-experiment-start (as every other logged
+                % time is), but getDirectionResponse's testing branch does
+                % GetSecs - responseOnsetTime and so needs the raw absolute
+                % GetSecs value. Passing the relative one there - which is
+                % what gameNFv4.m/gameNFv5.m do with cueOnsetTime - makes
+                % their testing-mode ReactionTime come out as roughly
+                % "seconds since boot" instead of a reaction time. Taken
+                % from one GetSecs call so the two can't disagree.
+                colorOnsetAbsTime = GetSecs;
+                colorOnsetTime = colorOnsetAbsTime - experimentStartTime;
+                if ~testing
+                    % Colour onset is the event everything downstream locks
+                    % to (see analysis/gameNFSSVEPColorOnsetLocked.m), so it
+                    % gets its own trigger. 'success' (50) is reused rather
+                    % than adding a code, since this task never sends it
+                    % otherwise and it is exactly what the event means here.
+                    cog_send_triggers(paraport, 'success');
+                    % Doubles as the response timer origin AND a queue
+                    % flush: resettimer discards any button events already
+                    % on the Cedrus stack, so presses made during the NF
+                    % phase - which are not valid responses - can't be
+                    % dequeued as an instant "response" on the next frame.
+                    cedrus.resettimer();
+                end
+            end
+
             if checkEscape(escapeKey)
                 runBlockLoop = false;
                 break;
@@ -698,13 +855,18 @@ try
                 if feedbackFramesRemaining <= 0
                     break;
                 end
-            elseif ~isPreCue
+            elseif colorsRevealed
+                % v6: responses are only read once the colours are out -
+                % before that the participant has nothing to answer from, so
+                % anything pressed is a guess and is deliberately ignored.
+                % reactionTime is therefore measured from colour onset, not
+                % cue onset (the Cedrus timer was reset there too).
                 if ~testing
                     [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                        false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
+                        false, cedrus, leftKey, rightKey, upKey, downKey, colorOnsetAbsTime);
                 else
                     [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
-                        true, [], leftKey, rightKey, upKey, downKey, cueOnsetTime);
+                        true, [], leftKey, rightKey, upKey, downKey, colorOnsetAbsTime);
                 end
 
                 if validResponse
@@ -725,6 +887,12 @@ try
                     responseTimeout = 1;
                     break;
                 end
+            elseif ~isPreCue && currentFrame >= revealDeadlineFrame
+                % Ran out of time to earn the reveal: the trial ends with no
+                % response at all, which is a different failure from a
+                % response window that opened and then expired.
+                revealTimeout = 1;
+                break;
             end
         end
         if ~runBlockLoop
@@ -744,18 +912,20 @@ try
         rtByTrial(trialNumber) = reactionTime;
 
         fid = fopen(csvFile, 'a');
-        fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%.6f,%s,%s,%d,%.6f,%d,%.6f,%d\n', ...
+        fprintf(fid, '%d,%.6f,%s,%s,%s,%s,%s,%.6f,%.6f,%.6f,%s,%s,%d,%.6f,%d,%d,%.6f,%d\n', ...
             trialNumber, trialStartTime, c1PointDir, c1MoveDir, c2PointDir, c2MoveDir, cue, cueOnsetTime, ...
-            correctResponse, participantResponse, accuracy, reactionTime, responseTimeout, trialEndTime, droppedFrameCount);
+            firstGreenTime, colorOnsetTime, correctResponse, participantResponse, accuracy, reactionTime, ...
+            revealTimeout, responseTimeout, trialEndTime, droppedFrameCount);
         fclose(fid);
 
         %% Log NF trace for this trial (one row per ~100ms, per nfTraceLogIntervalSec)
         fid = fopen(nfTraceCsvFile, 'a');
         for r = 1:numel(nfTraceFrameNumber)
-            fprintf(fid, '%d,%d,%.6f,%d,%.6f,%.6f,%.6f,%.6f,%d,%d\n', ...
+            fprintf(fid, '%d,%d,%.6f,%d,%.6f,%.6f,%.6f,%d,%.6f,%d,%d,%d\n', ...
                 trialNumber, nfTraceFrameNumber(r), nfTraceSampleTime(r), nfIndex, ...
-                nfTraceValueRaw(r), nfTraceValueClipped(r), nfTraceWindowProportion(r), ...
-                nfTraceDrive(r), nfTracePostCue(r), nfTraceReadOk(r));
+                nfTraceValueRaw(r), nfTraceValueClipped(r), nfTraceLevel(r), ...
+                nfTraceInGreenZone(r), nfTraceGreenHoldSec(r), nfTraceColorsRevealed(r), ...
+                nfTracePostCue(r), nfTraceReadOk(r));
         end
         fclose(fid);
 
@@ -769,8 +939,8 @@ try
 
         %% ITI
         for currentFrame = 1:itiFrames
-            Screen('FillRect', window, grey);
-            drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
+            Screen('FillRect', window, backgroundColor);
+            drawRoundedRect(window, colorCueRectPreCue, cueRect, cueRectCornerRadiusPx);
             if ~testing
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
@@ -806,12 +976,12 @@ else
     meanAccuracy = mean(validAccuracy);
 end
 
-Screen('FillRect', window, grey);
+Screen('FillRect', window, backgroundColor);
 Screen('TextSize', window, 35);
 performanceText = sprintf(['TESTING COMPLETED!\n\n' ...
     'ACCURACY: %.2f%%\n\n' ...
     'Press ESCAPE or any button to continue'], 100 * meanAccuracy);
-DrawFormattedText(window, performanceText, 'center', 'center', black);
+DrawFormattedText(window, performanceText, 'center', 'center', white);
 if ~testing
     vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
 else
@@ -843,5 +1013,8 @@ cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, parap
 % reset      -> 0
 % trialstart -> 20
 % cueonset   -> 45
+% success    -> 50   (v6 only: colour onset - the NF reveal, and the moment
+%                     the response window opens. Sent at most once per
+%                     trial, and not at all on a trial that never revealed.)
 % response   -> 40
 % trialstop  -> 30

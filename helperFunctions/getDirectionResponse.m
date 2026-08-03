@@ -2,8 +2,18 @@ function [validResponse, participantResponse, reactionTime] = getDirectionRespon
     runningOnMac, cedrus, leftKey, rightKey, upKey, downKey, responseOnsetTime)
 % getDirectionResponse  Checks for a 4-direction response: Cedrus button
 % box (Up=1, Right=5, Left=3, Down=6; Middle=4 unused) on Windows, arrow
-% keys on mac. reactionTime is measured from responseOnsetTime (the cue
-% onset timestamp) in both cases.
+% keys on mac. reactionTime is measured from responseOnsetTime (the moment
+% the response window opened - cue onset in most variants, colour onset in
+% gameNFv6.m) in both cases.
+%
+% responseOnsetTime must be a RAW GetSecs value, not a
+% getElapsedTime(experimentStartTime) one: the mac branch computes
+% GetSecs - responseOnsetTime, so a time already expressed relative to
+% experiment start yields roughly "seconds since boot" instead of a
+% reaction time. Callers log the relative value to CSV but pass the
+% absolute one here (see e.g. cueOnsetAbsTime in gameNFv4.m). The Windows
+% branch ignores it entirely - the Cedrus box's own timer, reset by the
+% caller when the response window opens, supplies the interval directly.
 
     validResponse = false;
     participantResponse = 'missed';
