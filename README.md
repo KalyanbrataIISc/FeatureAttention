@@ -153,6 +153,32 @@ The one place still on the old scheme is `SSVEPTestTrials.m`, whose
 
 ## Response input
 
+`gameNFv6.m` selects its run mode with the `testing` Boolean immediately
+after `sca`. Set `testing = true` on any development laptop (macOS or
+Windows), or `testing = false` on the experiment-room computer. The setting
+controls the full hardware split; the operating system is no longer used as
+a proxy in that script.
+
+- **Experiment mode** (`testing = false`): Cedrus button box, triggers,
+  participant/block prompts, and optional eye tracking.
+- **Testing mode** (`testing = true`): arrow keys, participant/block `000`,
+  and eye tracking and triggers disabled.
+
+Testing mode enables `SkipSyncTests` on both Windows and macOS. macOS also
+keeps sync tests skipped regardless of the flag, while experiment mode on
+the experiment-room Windows computer keeps PsychToolbox's strict checks.
+The Windows testing laptop has a known hybrid-GPU/multi-display timing
+failure, so it is suitable for task development but not validated SSVEP
+presentation or data collection.
+
+On the Windows testing laptop, `testingStimulusScreenNumber` selects the
+external Dell monitor explicitly (currently PTB screen 2). The stimulus is
+opened as a true fullscreen window so PsychToolbox can synchronize flips to
+vertical retrace; `kPsychGUIWindow` is not used. Experiment mode retains the
+existing highest-screen selection used in the experiment room.
+
+Earlier scripts still use their original platform-based split:
+
 - **Windows** (`~ismac`): Cedrus button box, XID buttons — Up = 1,
   Right = 5, Left = 3, Down = 6 (Middle = 4 is unused). Also sends triggers
   via `cog_send_triggers` and expects eye tracking + a serial paraport.

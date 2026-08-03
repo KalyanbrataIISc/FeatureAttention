@@ -1,11 +1,11 @@
-function cleanupExperiment(runningOnMac, eyeTrackingStopped, participantInfo, blockInfo, paraport)
+function cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, paraport)
     global cedrus;
 
     Priority(0);
     ShowCursor;
     sca;
 
-    if ~runningOnMac
+    if ~testing
         try
             if ~eyeTrackingStopped
                 EyeTracking(str2double(participantInfo),str2double(blockInfo),'stop');

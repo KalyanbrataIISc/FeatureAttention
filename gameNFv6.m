@@ -1,7 +1,12 @@
 % Copy of v4
 
 %% Initialise
-if ~ismac
+clc;        % Clears the Command Window
+close all;  % Closes all figure windows
+sca;        % Clears the screen
+testing = true; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
+
+if ~testing
     if exist('cedrus','var')
         cedrus.close();
     end
@@ -12,10 +17,7 @@ if ~ismac
     end
 end
 
-clc;        % Clears the Command Window
-clear;      % Removes all variables from the workspace
-close all;  % Closes all figure windows
-sca;        % Clears the screen
+clearvars -except testing; % Removes old variables but keeps the run-mode selection
 
 experimentRoot = fileparts(mfilename('fullpath'));
 if isempty(experimentRoot)
@@ -23,13 +25,13 @@ if isempty(experimentRoot)
 end
 addpath(genpath(experimentRoot));
 
-if ~ismac
+if ~testing
     % Begining
     cedrusopen;
 end
 
 %% Participant and block info
-if ~ismac
+if ~testing
     participantInfo = input('Enter your participant number: ', 's');
     blockInfo = input('Enter your block number: ', 's');
 else
@@ -40,7 +42,7 @@ end
 % Initialize timer
 experimentStartTime = GetSecs;
 
-if ~ismac
+if ~testing
     eyeTracking = input('Eyetracking (1 or 0)?');
 else
     eyeTracking = 0;
@@ -89,7 +91,7 @@ droppedFrameCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_leaves_dropped
 
 % Here we call some default settings for setting up Psychtoolbox
 PsychDefaultSetup(2);
-if ismac
+if testing || ismac
     Screen('Preference', 'SkipSyncTests', 1);
 end
 
@@ -97,7 +99,7 @@ end
 KbName('UnifyKeyNames');
 
 % Paraport setup for triggers
-if ~ismac
+if ~testing
     paraport = serial('COM9','BaudRate',115200,'DataBits',8, 'StopBits', 1, 'Parity', 'none'); %#ok<SERIAL>
     get(paraport);
     fopen(paraport);
@@ -115,7 +117,12 @@ green = [0 255 0];
 red   = [255 0 0];
 
 %% PARAMETERS
-% Key mappings (used only when running on mac, where no Cedrus box is present)
+% Display selection
+% On the Windows testing laptop, PTB screen 2 is the external Dell monitor.
+% The experiment-room path retains its existing highest-screen selection.
+testingStimulusScreenNumber = 2;
+
+% Key mappings (used only in testing mode, where no Cedrus box is present)
 escapeKey = KbName('ESCAPE');
 leftKey   = KbName('LeftArrow');
 rightKey  = KbName('RightArrow');
@@ -351,13 +358,21 @@ maxDeltaEC2 = norm(labC2 - labGrey);  % ditto for colorC2 - deliberately not ass
 
 %% Initialise the screen
 screens = Screen('Screens');
-screenNumber = max(screens);
+if testing && ispc
+    if ~ismember(testingStimulusScreenNumber, screens)
+        error('Configured testing screen %d is unavailable. PTB screens: %s', ...
+            testingStimulusScreenNumber, mat2str(screens));
+    end
+    screenNumber = testingStimulusScreenNumber;
+else
+    screenNumber = max(screens);
+end
 
-if ~ismac && eyeTracking
+if ~testing && eyeTracking
     EyeTracking(str2double(participantInfo),str2double(blockInfo),'start');
 end
 
-[window,windowRect]=Screen('OpenWindow', screenNumber, grey,[], [], [], [], [], [], kPsychGUIWindow);
+[window, windowRect] = Screen('OpenWindow', screenNumber, grey);
 Screen('ColorRange', window, 255);
 Screen('TextSize', window, 40);
 Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
@@ -371,7 +386,7 @@ drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
 Screen('Flip', window);
 WaitSecs(1);
 
-% v2: vbl is captured on every platform (not just ~ismac) because the
+% v2: vbl is captured in both run modes because the
 % SSVEP phase below is now driven from this real measured flip timestamp
 % rather than a frame counter - see computeSsvepColorsFromTime.m.
 vbl = Screen('Flip', window);
@@ -404,7 +419,7 @@ runBlockLoop = true;
 trialNumber = 1;
 accuracyByTrial = nan(1, trialNumberPerBlock);
 rtByTrial = nan(1, trialNumberPerBlock);
-eyeTrackingStopped = ismac || ~eyeTracking;
+eyeTrackingStopped = testing || ~eyeTracking;
 
 try
     %% Instructions screen (once, before the block starts), with static example leaves
@@ -452,7 +467,7 @@ try
     Screen('TextSize', window, 28);
     DrawFormattedText(window, 'Press any key or button to begin', 'center', windowRect(4) - 80, black);
 
-    if ~ismac
+    if ~testing
         vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
         cedrus.waitpress(600);
     else
@@ -461,7 +476,7 @@ try
     end
 
     while runBlockLoop && trialNumber <= trialNumberPerBlock
-        if ~ismac && eyeTracking
+        if ~testing && eyeTracking
             calllib('iViewXAPI', 'iV_StartRecording');
         end
 
@@ -542,7 +557,7 @@ try
         cueOnsetTime = NaN;
 
         disp(trialNumber);
-        if ~ismac
+        if ~testing
             cog_send_triggers(paraport, 'trialstart');
         end
 
@@ -651,9 +666,9 @@ try
             end
 
             % v2: missed-frame detection is only meaningful with real vsync
-            % timing (~ismac, where SkipSyncTests is off), so it's only
+            % timing (experiment mode, where SkipSyncTests is off), so it's only
             % tracked there - see droppedFrameCsvFile above.
-            if ~ismac
+            if ~testing
                 [vbl, ~, ~, missed] = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
                 if missed > 0
                     droppedFrameCount = droppedFrameCount + 1;
@@ -667,7 +682,7 @@ try
 
             if currentFrame == cueOnsetFrame
                 cueOnsetTime = getElapsedTime(experimentStartTime);
-                if ~ismac
+                if ~testing
                     cog_send_triggers(paraport, 'cueonset');
                     cedrus.resettimer();
                 end
@@ -684,7 +699,7 @@ try
                     break;
                 end
             elseif ~isPreCue
-                if ~ismac
+                if ~testing
                     [validResponse, participantResponse, reactionTime] = getDirectionResponse( ...
                         false, cedrus, leftKey, rightKey, upKey, downKey, cueOnsetTime);
                 else
@@ -694,7 +709,7 @@ try
 
                 if validResponse
                     accuracy = strcmp(participantResponse, correctResponse);
-                    if ~ismac
+                    if ~testing
                         cog_send_triggers(paraport, 'response');
                     end
                     if accuracy
@@ -713,13 +728,13 @@ try
             end
         end
         if ~runBlockLoop
-            if ~ismac
+            if ~testing
                 cog_send_triggers(paraport, 'trialstop');
             end
             break;
         end
 
-        if ~ismac
+        if ~testing
             cog_send_triggers(paraport, 'trialstop');
         end
 
@@ -756,30 +771,30 @@ try
         for currentFrame = 1:itiFrames
             Screen('FillRect', window, grey);
             drawRoundedRect(window, black, cueRect, cueRectCornerRadiusPx);
-            if ~ismac
+            if ~testing
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
                 vbl = Screen('Flip', window);
             end
         end
 
-        if ~ismac && eyeTracking
+        if ~testing && eyeTracking
             calllib('iViewXAPI', 'iV_StopRecording');
         end
 
         trialNumber = trialNumber + 1;
     end
 
-    if ~ismac && eyeTracking
+    if ~testing && eyeTracking
         EyeTracking(str2double(participantInfo),str2double(blockInfo),'stop');
         eyeTrackingStopped = true;
     end
 
 catch ME
-    if ~ismac
+    if ~testing
         cog_send_triggers(paraport, 'trialstop');
     end
-    cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+    cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, paraport);
     rethrow(ME);
 end
 
@@ -797,7 +812,7 @@ performanceText = sprintf(['TESTING COMPLETED!\n\n' ...
     'ACCURACY: %.2f%%\n\n' ...
     'Press ESCAPE or any button to continue'], 100 * meanAccuracy);
 DrawFormattedText(window, performanceText, 'center', 'center', black);
-if ~ismac
+if ~testing
     vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
 else
     Screen('Flip', window);
@@ -809,7 +824,7 @@ WaitSecs(1);
 waitForEscape = true;
 while waitForEscape
     [keyIsDown, ~, keyCode] = KbCheck(-1);
-    if ~ismac
+    if ~testing
         [~, ~, ohhItIsPressed] = cedrus.getpress();
     else
         ohhItIsPressed = 0;
@@ -821,7 +836,7 @@ while waitForEscape
     WaitSecs(0.01);
 end
 
-cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, paraport);
 
 %% Trigger values sent by this task
 % Values are defined in functions/cog_send_triggers.m.
