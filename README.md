@@ -257,6 +257,21 @@ run mode: the Cedrus box's own millisecond timer in experiment mode, and
   accepted until it is; see
   [Grayscale-integrator neurofeedback variant](#grayscale-integrator-neurofeedback-variant-gamenfv6m)
   below.
+- `gameNFv7.m` — `gameNFv6.m` with fixed-path leaf motion: leaves follow
+  permanent non-overlapping wrapping paths instead of respawning, so nothing
+  appears or disappears mid-trial. Cue, goal, neurofeedback, timing,
+  triggers and CSV are unchanged from `gameNFv6.m`. See
+  [Fixed-path leaf motion](#fixed-path-leaf-motion-gamenfv7m-and-gamenfv5_3m).
+- `gameNFv5_3.m` — the same motion change applied to `gameNFv5_2.m`, so:
+  feature+direction cue, colour report, `gameNFv6.m`'s neurofeedback, and
+  fixed-path motion.
+- `gameNFv5_2.m` — the two branches recombined: `gameNFv5.m`'s cue and goal
+  (feature + direction cue, colour report) driven by `gameNFv6.m`'s
+  neurofeedback (black display, integrated grayscale fill, green-zone hold,
+  response gated on the colour reveal). See
+  [Recombined variant](#recombined-variant-gamenfv5_2m) below. Named with an
+  underscore because MATLAB script filenames must be valid identifiers — a
+  hyphen would parse as subtraction.
 - `gameNFv5.m` — a separate branch, not superseded by `gameNFv6.m` and not
   an ancestor of it: same neurofeedback as `gameNFv4.m`, but the cue is a
   feature + direction and the response is the cued flock's colour; see
@@ -282,6 +297,26 @@ run mode: the Cedrus box's own millisecond timer in experiment mode, and
 - `gameBreakoutv2.m` / `gameBreakoutv3_WL.m` — a different task entirely
   (SSVEP-neurofeedback Breakout), sharing only `nf.txt` and the scaffolding;
   see [Breakout task](#breakout-task-gamebreakoutm) below.
+- `gameNFtemp.m` — a motion **sandbox, not an experiment script**: no
+  trials, cue, neurofeedback, CSV or triggers, just the leaf field with
+  every parameter adjustable from the keyboard while it runs. It previews
+  the fixed-path ("lane") leaf motion, in which every leaf follows a
+  permanent wrapping path chosen so that no two leaves ever overlap, so
+  nothing is respawned and the on-screen count is constant — as opposed to
+  `initLeaves.m`/`updateLeaves.m`, where leaves appear and disappear
+  whenever a lifetime expires, a leaf exits the field, or two leaves drift
+  too close. Press `M` in the sandbox to A/B the two. The motion helpers it
+  uses (`initLeafLanes.m`, `updateLeafLanes.m`, `verifyLeafLanes.m`,
+  `drawLeavesWrapped.m`, `chooseWrapFieldRect.m` and their
+  placement/geometry helpers) are **not yet used by any experiment
+  variant**. Note the fixed-path scheme constrains the field: with flocks
+  moving on perpendicular axes it needs `gcd(fieldWidth, fieldHeight)` to
+  exceed roughly twice a leaf, and a raw screen's gcd is a lottery — a full
+  1920×1080 field gives 120 and fails every perpendicular combination, while
+  1920×960 gives 960 and works. `chooseWrapFieldRect.m` therefore picks the
+  largest centred field that qualifies (the requirement is the same for all
+  24 direction combinations, so the field can be fixed for a whole block),
+  and `initLeafLanes.m` reports infeasibility instead of silently colliding.
 - `functions/` — original experiment scaffolding (Cedrus, triggers, eye
   tracking, elapsed-time helper).
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
@@ -913,6 +948,122 @@ the parameters and so stays reconstructible at full frame resolution offline.
 **Analysis.** `analysis/gameNFSSVEPColorOnsetLocked.m` is the matching
 offline analysis, locked to colour onset (trigger 50). See
 [Project layout](#project-layout).
+
+## Recombined variant (`gameNFv5_2.m`)
+
+`gameNFv5_2.m` puts the two branches back together: **`gameNFv5.m`'s cue and
+goal, driven by `gameNFv6.m`'s neurofeedback.** Everything about the task —
+the feature + direction cue (`MOVING` / `UP`), the four-cue balancing, the
+neutral dark green cue box, the two-alternative colour report via
+`helperFunctions/getColorResponse.m`, the `blue`/`orange` labels and the
+lighter feedback colours — is `gameNFv5.m`'s, unchanged. Everything about
+the neurofeedback — black background, black↔white SSVEP flicker, the
+`nfLevel` integrator and its parameters, the green zone, the held reveal,
+the gated response, the two timeouts and the `success` (50) trigger — is
+`gameNFv6.m`'s, unchanged. The NF state machine and every NF parameter are
+byte-identical to `gameNFv6.m`'s.
+
+(The underscore in the filename is not cosmetic: MATLAB script filenames
+must be valid identifiers, so `gameNFv5-2.m` would be uncallable — MATLAB
+parses `gameNFv5-2` as a subtraction.)
+
+**Why the combination is tighter than either parent.** In `gameNFv6.m` the
+shared grayscale level makes the two flocks visually identical until the
+reveal, while its cue is a *colour* — so a participant who cannot yet see
+colours cannot tell which flock the cue meant, and can only infer they are
+attending correctly from the level climbing. Here the cue is a *direction*,
+and direction survives the grayscale phase intact: the flocks keep pointing
+and moving visibly from frame one, so the cued flock is identifiable
+immediately. The reveal then supplies the single thing still missing — its
+colour, which is the answer.
+
+So the neurofeedback gates the **answer** rather than gating the ability to
+start working, and "no response before colour onset" stops being a fairness
+rule and becomes a statement of fact: before the reveal there is literally
+nothing to report. `gameNFv5.m` already assumed exactly this (it set
+`nfBaselineDeltaE = 0` so that "the trial simply cannot be answered until
+sustained correct lateralisation has revealed the colors"); `gameNFv6.m`'s
+neurofeedback is a more direct way of delivering it.
+
+**CSV output.** The union of both parents' columns — `gameNFv5.m`'s
+`CueFeature`/`CueDirection` plus `gameNFv6.m`'s
+`FirstGreenTime`/`ColorOnsetTime`/`RevealTimeout`:
+
+```
+TrialNumber, TrialStart, C1PointDir, C1MoveDir, C2PointDir, C2MoveDir, Cue,
+CueFeature, CueDirection, CueOnsetTime, FirstGreenTime, ColorOnsetTime,
+CorrectResponse, ParticipantResponse, Accuracy, ReactionTime, RevealTimeout,
+ResponseTimeout, TrialEnd, DroppedFrameCount
+```
+
+`ColorOnsetTime` supersedes `gameNFv5.m`'s `ColorRevealTime` — same concept,
+but defined by the green-zone hold completing rather than by the first frame
+with `nfDrive > 0`. It carries more weight here than in either parent, since
+it is the moment the trial first became answerable at all. The NF trace and
+dropped-frame CSVs are identical to `gameNFv6.m`'s.
+
+**Analysis.** `analysis/gameNFSSVEPColorOnsetLocked.m` works on this
+variant's data unchanged — it needs trigger 50 and the `ColorOnsetTime`
+column, both of which are present.
+
+## Fixed-path leaf motion (`gameNFv7.m` and `gameNFv5_3.m`)
+
+Two variants that change **only how the leaves move**, leaving cue, goal,
+neurofeedback, timing, triggers and CSV output exactly as their parents had
+them:
+
+- **`gameNFv7.m`** = `gameNFv6.m` + fixed-path motion (colour-box cue,
+  direction report).
+- **`gameNFv5_3.m`** = `gameNFv5_2.m` + fixed-path motion (feature+direction
+  cue, colour report).
+
+**The problem.** `initLeaves.m`/`updateLeaves.m` respawn a leaf somewhere
+else whenever its lifetime expires (every ~1s), it leaves the field, or it
+drifts within `minLeafSeparationPx` of a leaf of the *other* flock — within
+a flock every leaf shares one velocity, so same-flock separations are frozen
+and can never trigger it. Leaves therefore appear and disappear constantly
+and the on-screen count wobbles.
+
+**The fix.** Every leaf gets a permanent wrapping path, chosen at trial setup
+so no two ever overlap. Nothing respawns, nothing expires, each leaf crosses
+the field and re-enters from the far side, and exactly `2 *
+numLeavesPerFlock` leaves are on screen at all times.
+`helperFunctions/initLeafLanes.m` documents the construction: interleaved
+disjoint lanes when the flocks move on the same axis, and a phase-locked
+grid built on a collision invariant when they move on perpendicular axes.
+`drawLeavesWrapped.m` paints a leaf straddling an edge on both sides so it
+slides across instead of popping.
+
+`leafLifetimeSec`, `minLeafSeparationMultiplier` and `fieldMarginPx` are
+gone from both scripts — none of them means anything now.
+
+**The constraint, and why it is checked up front.** For perpendicular flocks
+the scheme needs `gcd(fieldWidth, fieldHeight)` to comfortably exceed a leaf,
+so `chooseWrapFieldRect.m` picks the largest centred sub-rectangle of the
+display that qualifies (the leaf field is therefore usually a little smaller
+than the screen). That requirement **scales with leaf size**, so a large
+`leafSizePx` can make the scheme impossible on a given display. Both scripts
+therefore place — and, with `verifyLeafPathsAtSetup = true`, simulate a full
+motion period for — **all 24 direction combinations before the block
+starts**, and error at the console with a diagnosis rather than failing
+partway through a participant. Measured limits, leaves per flock:
+
+| display | `minRepeatsPerAxis = 2` | `minRepeatsPerAxis = 1` |
+| --- | --- | --- |
+| 2560×1440 | 90 px → 50, 120 px → 24, 150 px → 18, **180 px → impossible** | 120 px → 56, 150 px → 30, 180 px → 16 |
+| 1920×1080 | 90 px → 24, **120 px+ → impossible** | 90 px → 56, 120 px → 20, 180 px → 6 |
+
+`minRepeatsPerAxis` (default 2) is what keeps the leaves evenly spread: it
+forces enough path repeats per axis that the usable positions do not
+collapse into a few clusters with empty stretches between them. Dropping it
+to 1 permits bigger leaves at the cost of that evenness.
+
+Both scripts ship with `leafSizePx = 180` inherited from `gameNFv6.m`, which
+**does not run** at `minRepeatsPerAxis = 2` on a 1440-tall display. Pick the
+size against the display the experiment will actually run on — a 1920×1080
+experiment room caps it far lower than a 2560×1440 development screen.
+
+`gameNFtemp.m` is the sandbox for judging all of this interactively.
 
 ## Breakout task (`gameBreakout.m`)
 
