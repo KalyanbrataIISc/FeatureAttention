@@ -385,7 +385,7 @@ nfIndexC2           = 2;      % nf.txt column: positive when 23Hz (c2) SSVEP pow
 % cue there is nothing to attend to, so any pre-cue accumulation would be
 % noise pre-charging the display. It is reset to 0 at the start of every
 % trial, so the black->white distance is the same on every trial.
-nfLevelRatePerUnitNf = 0.100;  % level units per second at |NF| = 1, i.e. 1.0 -> pure black to pure white in 1s of sustained NF = 1
+nfLevelRatePerUnitNf = 0.500;  % level units per second at |NF| = 1, i.e. 1.0 -> pure black to pure white in 1s of sustained NF = 1
 nfValueClipLimit     = 1.000;  % NF magnitude is clipped here before stepping (nf.txt's SMI values are ~[-1, 1])
 
 % ------------------------- v6: green zone and reveal ------------------------
