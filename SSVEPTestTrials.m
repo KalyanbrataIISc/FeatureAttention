@@ -5,27 +5,25 @@
 % letterDurationSec; the letter's contrast flickers in exact phase with the
 % grating (same frequency, same time base). The participant silently counts
 % how many times 'X' appears during the trialDurationSec stream, then
-% reports odd/even via Cedrus during the following fixed-length ITI (no
+% reports odd/even with the keyboard during the following fixed-length ITI (no
 % SSVEP on screen during the ITI). No neurofeedback, no cue, no directions -
 % see README.md for how this differs from the leaves task (gamev1.m /
-% gameNFv3.m), which this script's setup/Cedrus/trigger scaffolding follows.
+% gameNFv3.m), which this script's setup/trigger scaffolding follows.
 
 %% Initialise
-if ~ismac
-    if exist('cedrus','var')
-        cedrus.close();
-    end
+clc;        % Clears the Command Window
+close all;  % Closes all figure windows
+sca;        % Clears the screen
+testing = true; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
 
+if ~testing
     s=instrfind; %#ok<INSTRF>
     if ~isempty(s)
         fclose(s);
     end
 end
 
-clc;        % Clears the Command Window
-clear;      % Removes all variables from the workspace
-close all;  % Closes all figure windows
-sca;        % Clears the screen
+clearvars -except testing; % Removes old variables but keeps the run-mode selection
 
 experimentRoot = fileparts(mfilename('fullpath'));
 if isempty(experimentRoot)
@@ -33,13 +31,8 @@ if isempty(experimentRoot)
 end
 addpath(genpath(experimentRoot));
 
-if ~ismac
-    % Begining
-    cedrusopen;
-end
-
 %% Participant and block info
-if ~ismac
+if ~testing
     participantInfo = input('Enter your participant number: ', 's');
     blockInfo = input('Enter your block number: ', 's');
 else
@@ -50,7 +43,7 @@ end
 % Initialize timer
 experimentStartTime = GetSecs;
 
-if ~ismac
+if ~testing
     eyeTracking = input('Eyetracking (1 or 0)?');
 else
     eyeTracking = 0;
@@ -72,35 +65,21 @@ csvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_ssveptest_trialdata.csv', 
 % Dropped/delayed-frame log, same rationale and shape as gameNFv3.m's: one
 % row per frame during the SSVEP stream whose Screen('Flip') missed its
 % requested presentation deadline (only meaningful with real vsync timing,
-% so only tracked on ~ismac).
+% so only tracked outside testing mode).
 droppedFrameCsvHeader = 'TrialNumber,FrameNumber,VBLTime,MissedBySec';
 droppedFrameCsvFile = ensureCsvWithHeader(csvBaseDir, sprintf('%s_ssveptest_droppedframes.csv', sessionTag), droppedFrameCsvHeader);
 
-% Cedrus:   Up button       = 1 (unused)
-%           Right button    = 5 (Even)
-%           Middle button   = 4 (unused)
-%           Left button     = 3 (Odd)
-%           Down button     = 6 (unused)
-
 % Here we call some default settings for setting up Psychtoolbox
 PsychDefaultSetup(2);
-if ismac
+if testing || ismac
     Screen('Preference', 'SkipSyncTests', 1);
 end
 
 % Unify key names across different operating systems
 KbName('UnifyKeyNames');
 
-% Paraport setup for triggers
-if ~ismac
-    paraport = serial('COM9','BaudRate',115200,'DataBits',8, 'StopBits', 1, 'Parity', 'none'); %#ok<SERIAL>
-    get(paraport);
-    fopen(paraport);
-    cog_send_triggers(paraport,'reset');
-end
-if ~exist('paraport','var')
-    paraport = [];
-end
+% UDP trigger reset (bci_send_triggers sends to localhost:5007 in both modes)
+bci_send_triggers('reset');
 
 %% Display colors
 grey  = [128 128 128];
@@ -110,10 +89,10 @@ green = [0 255 0];
 red   = [255 0 0];
 
 %% PARAMETERS
-% Key mappings (used only when running on mac, where no Cedrus box is present)
+% Keyboard response mappings (used in both testing and experiment modes)
 escapeKey = KbName('ESCAPE');
-oddKey    = KbName('LeftArrow');  % Odd  (matches Cedrus Left=3)
-evenKey   = KbName('RightArrow'); % Even (matches Cedrus Right=5)
+oddKey    = KbName('LeftArrow');  % Odd
+evenKey   = KbName('RightArrow'); % Even
 
 % Experiment structure
 trialNumberPerBlock = 20;
@@ -140,7 +119,7 @@ xCountMax = 5; % upper bound (both randomized per trial via ssvepTestHelperFunct
 % gameBreakoutv2.m's paddle gratings. The patch is clipped to a circle by
 % a one-time aperture mask texture (see createCircularApertureMask.m
 % below), not by a texture rebuilt every frame.
-gratingFreqHz         = 20;   % contrast-flicker frequency (Hz)
+gratingFreqHz         = 19;   % contrast-flicker frequency (Hz)
 gratingPatchRadiusPx  = 300;  % radius of the circular grating patch
 gratingBarWidthPx     = 20;   % width of each grating bar
 gratingMidColor       = grey; % contrast trough - must match the background so the patch vanishes, not just dims
@@ -167,7 +146,7 @@ instructionsTextSize = 26;
 screens = Screen('Screens');
 screenNumber = max(screens);
 
-if ~ismac && eyeTracking
+if ~testing && eyeTracking
     EyeTracking(str2double(participantInfo),str2double(blockInfo),'start');
 end
 
@@ -212,7 +191,7 @@ runBlockLoop = true;
 trialNumber = 1;
 accuracyByTrial = nan(1, trialNumberPerBlock);
 rtByTrial = nan(1, trialNumberPerBlock);
-eyeTrackingStopped = ismac || ~eyeTracking;
+eyeTrackingStopped = testing || ~eyeTracking;
 
 try
     %% Instructions screen (once, before the block starts)
@@ -230,16 +209,11 @@ try
     Screen('TextSize', window, instructionsTextSize);
     DrawFormattedText(window, instructionsText, 'center', 'center', black);
 
-    if ~ismac
-        vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
-        cedrus.waitpress(600);
-    else
-        vbl = Screen('Flip', window);
-        KbWait(-1);
-    end
+    vbl = Screen('Flip', window);
+    KbWait(-1);
 
     while runBlockLoop && trialNumber <= trialNumberPerBlock
-        if ~ismac && eyeTracking
+        if ~testing && eyeTracking
             calllib('iViewXAPI', 'iV_StartRecording');
         end
 
@@ -289,7 +263,7 @@ try
             Screen('FillOval', window, discColor, discRect);
             DrawFormattedText(window, currentLetter, 'center', 'center', letterColor, [], [], [], [], [], discRect);
 
-            if ~ismac
+            if ~testing
                 [vbl, ~, ~, missed] = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
                 if missed > 0
                     droppedFrameCount = droppedFrameCount + 1;
@@ -305,9 +279,7 @@ try
                 % Sent right after the flip that actually put the first
                 % stimulus frame on screen, not before - see gameBreakoutv2.m.
                 trialStartTime = getElapsedTime(experimentStartTime);
-                if ~ismac
-                    cog_send_triggers(paraport, 'trialstart');
-                end
+                bci_send_triggers('trialstart');
             end
 
             if checkEscape(escapeKey)
@@ -316,20 +288,12 @@ try
             end
         end
 
-        if ~ismac
-            cog_send_triggers(paraport, 'trialstop');
-        end
+        bci_send_triggers('trialstop');
         if ~runBlockLoop
             break;
         end
 
         %% ITI: blank (no SSVEP), response collection, feedback - always itiDurationSec long
-        if ~ismac
-            % Discards any stray Cedrus presses queued during the SSVEP
-            % stream and zeroes the RT timer, so the response window's RT
-            % is measured from ITI onset, not contaminated by earlier events.
-            cedrus.resettimer();
-        end
         itiResponseOnsetTime = getElapsedTime(experimentStartTime);
 
         validResponse = false;
@@ -347,7 +311,7 @@ try
                 DrawFormattedText(window, feedbackString, 'center', 'center', feedbackColor);
             end
 
-            if ~ismac
+            if ~testing
                 vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
             else
                 vbl = Screen('Flip', window);
@@ -364,19 +328,12 @@ try
                     inFeedback = false; % feedback shown; stay blank for the rest of the fixed-length ITI
                 end
             elseif ~validResponse
-                if ~ismac
-                    [validResponse, participantResponse, reactionTime] = getEvenOddResponse( ...
-                        false, cedrus, oddKey, evenKey, itiResponseOnsetTime);
-                else
-                    [validResponse, participantResponse, reactionTime] = getEvenOddResponse( ...
-                        true, [], oddKey, evenKey, itiResponseOnsetTime);
-                end
+                [validResponse, participantResponse, reactionTime] = getEvenOddResponse( ...
+                    true, [], oddKey, evenKey, itiResponseOnsetTime);
 
                 if validResponse
                     accuracy = strcmp(participantResponse, correctResponse);
-                    if ~ismac
-                        cog_send_triggers(paraport, 'response');
-                    end
+                    bci_send_triggers('response');
                     if accuracy
                         feedbackString = 'Correct';
                         feedbackColor = green;
@@ -417,23 +374,21 @@ try
         end
         fclose(fid);
 
-        if ~ismac && eyeTracking
+        if ~testing && eyeTracking
             calllib('iViewXAPI', 'iV_StopRecording');
         end
 
         trialNumber = trialNumber + 1;
     end
 
-    if ~ismac && eyeTracking
+    if ~testing && eyeTracking
         EyeTracking(str2double(participantInfo),str2double(blockInfo),'stop');
         eyeTrackingStopped = true;
     end
 
 catch ME
-    if ~ismac
-        cog_send_triggers(paraport, 'trialstop');
-    end
-    cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+    bci_send_triggers('trialstop');
+    cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, []);
     rethrow(ME);
 end
 
@@ -451,7 +406,7 @@ performanceText = sprintf(['TESTING COMPLETED!\n\n' ...
     'ACCURACY: %.2f%%\n\n' ...
     'Press ESCAPE or any button to continue'], 100 * meanAccuracy);
 DrawFormattedText(window, performanceText, 'center', 'center', black);
-if ~ismac
+if ~testing
     vbl = Screen('Flip', window, vbl + 0.5 * interFrameInterval);
 else
     Screen('Flip', window);
@@ -463,22 +418,17 @@ WaitSecs(1);
 waitForEscape = true;
 while waitForEscape
     [keyIsDown, ~, keyCode] = KbCheck(-1);
-    if ~ismac
-        [~, ~, ohhItIsPressed] = cedrus.getpress();
-    else
-        ohhItIsPressed = 0;
-    end
 
-    if (keyIsDown && keyCode(escapeKey)) || ohhItIsPressed
+    if keyIsDown && keyCode(escapeKey)
         waitForEscape = false;
     end
     WaitSecs(0.01);
 end
 
-cleanupExperiment(ismac, eyeTrackingStopped, participantInfo, blockInfo, paraport);
+cleanupExperiment(testing, eyeTrackingStopped, participantInfo, blockInfo, []);
 
 %% Trigger values sent by this task
-% Values are defined in functions/cog_send_triggers.m (same subset gamev1.m uses).
+% Values are defined in functions/bci_send_triggers.m and sent by UDP.
 % reset      -> 0
 % trialstart -> 20  (sent right after the flip that shows the first SSVEP/letter frame)
 % response   -> 40  (sent when a valid odd/even response is detected during the ITI)
