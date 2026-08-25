@@ -1,7 +1,7 @@
 sca;
 clear all;
 
-Screen('Preference', 'SkipSyncTests', 1);
+Screen('Preference', 'SkipSyncTests', 0);
 
 screens = Screen('Screens');
 disp(screens);

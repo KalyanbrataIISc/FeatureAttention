@@ -309,7 +309,7 @@ itiDurationSec      = 1.000;  % blank inter-trial interval
 % experiment will actually run on, not just the development one - and note
 % that a 1920x1080 experiment room caps this far lower than a 2560x1440
 % laptop screen does.
-leafSizePx = 140; % base leaf size (= leaf length in px)
+leafSizePx = 100; % base leaf size (= leaf length in px)
 leafWidthMultiplier           = 0.42; % leafWidthPx           = leafSizePx * leafWidthMultiplier
 leafBorderThicknessMultiplier = 0.20; % leafBorderThicknessPx = leafSizePx * leafBorderThicknessMultiplier
 
@@ -495,7 +495,7 @@ nfIndexC2           = 2;      % nf.txt column: positive when 23Hz (c2) SSVEP pow
 % 1/nfLevelRatePerUnitNf seconds of sustained NF = 1 (so 2.0s at 0.500), and
 % reaching the green zone takes nfGreenThreshold/nfLevelRatePerUnitNf
 % "NF-seconds" of accumulated lateralisation (1.9 at 0.500).
-nfLevelRatePerUnitNf = 0.500;
+nfLevelRatePerUnitNf = 3.000;
 nfValueClipLimit     = 1.000;  % NF magnitude is clipped here before stepping (nf.txt's SMI values are ~[-1, 1])
 
 % ------------------------- v6: green zone and reveal ------------------------
@@ -515,8 +515,8 @@ nfValueClipLimit     = 1.000;  % NF magnitude is clipped here before stepping (n
 % does afterwards - both because the participant needs a stable stimulus to
 % answer against, and because the response window opens at that moment (see
 % nfRevealTimeoutSec / responseTimeoutSec above).
-nfWhiteTopRelaxation = 0.05;   % green zone = the top 5% of the level, i.e. nfLevel >= 0.95
-nfGreenHoldSec       = 1.500;  % continuous time in the green zone required to reveal the colors
+nfWhiteTopRelaxation = 0.10;   % green zone = the top 5% of the level, i.e. nfLevel >= 0.95
+nfGreenHoldSec       = 1.000;  % continuous time in the green zone required to reveal the colors
 nfGreenTintStrength  = 0.30;   % how green the green-zone white is: fraction the R and B channels are pulled down by
 colorNfGreenZone     = round([255 * (1 - nfGreenTintStrength), 255, 255 * (1 - nfGreenTintStrength)]);
 
