@@ -257,6 +257,15 @@ run mode: the Cedrus box's own millisecond timer in experiment mode, and
   accepted until it is; see
   [Grayscale-integrator neurofeedback variant](#grayscale-integrator-neurofeedback-variant-gamenfv6m)
   below.
+- `gameNFv9.m` — `gameNFv8.m` with a **selectable neurofeedback source**:
+  `nfSourceType` chooses between reading `nf.txt` (`'file'`, the default and
+  what every other variant does) and reading the identical values off a TCP
+  connection (`'tcp'`), which is what lets the game run on a different
+  computer from the one producing the NF, over Wi-Fi, with no shared drive.
+  Cue, goal, neurofeedback, motion, timing, triggers and CSV output are
+  unchanged from `gameNFv8.m`, so `'file'` and `'tcp'` runs are the same
+  experiment. See
+  [Serving neurofeedback over TCP](#serving-neurofeedback-over-tcp-gamenfv9m--nf_tcp_serverpy).
 - `gameNFv7.m` — `gameNFv6.m` with fixed-path leaf motion: leaves follow
   permanent non-overlapping wrapping paths instead of respawning, so nothing
   appears or disappears mid-trial. Cue, goal, neurofeedback, timing,
@@ -322,14 +331,25 @@ run mode: the Cedrus box's own millisecond timer in experiment mode, and
 - `helperFunctions/` — task-specific logic for this paradigm (leaf shape,
   motion/collision, SSVEP color computation, response mapping, timing jitter,
   the rounded-rect cue box, NF file reading/color mapping, sRGB↔CIELAB
-  conversion, CSV header-mismatch-safe file creation). New helper functions
+  conversion, CSV header-mismatch-safe file creation). The NF source
+  helpers `gameNFv9.m` adds live here too: `openNfSource.m`,
+  `readNfSample.m` and `closeNfSource.m`, which wrap `readNFValue.m` for the
+  `'file'` source and the socket for the `'tcp'` one. New helper functions
   belong here, one function per file — this MATLAB version doesn't support
   local functions inside a script.
 - `breakoutHelperFunctions/` — the same, but for `gameBreakout.m` only (ball
   physics, collisions, brick spawning, paddle NF control, grating drawing).
 - `nf.txt` — binary NF data file in the project root, continuously
   overwritten by the external real-time acquisition process; read (not
-  written) by every `gameNF*.m` variant.
+  written) by every `gameNF*.m` variant. `gameNFv9.m` can read the same
+  values over TCP instead.
+- `nf_tcp_server.py` — optional TCP server for the NF stream: pushes the
+  same 24-byte records `nf.txt` holds to any number of connected clients,
+  sourced either from simulated values (`--source sim`) or from a real
+  `nf.txt` it mirrors (`--source file`). Its `probe` subcommand is also the
+  quickest way to check a live stream from any machine. Only `gameNFv9.m`
+  can consume it; see
+  [Serving neurofeedback over TCP](#serving-neurofeedback-over-tcp-gamenfv9m--nf_tcp_serverpy).
 - `data/` — per-participant/block CSV logs (created on first run).
 - `analysis/gameNFSSVEPCueOnsetLocked.m`,
   `analysis/gameNFSSVEPResponseLocked.m` and
@@ -383,6 +403,147 @@ parameters — are in the `%% PARAMETERS` block near the top of the script.
 The first one to retune on real EEG is `nfLevelRatePerUnitNf`: it sets how
 fast the leaves brighten per unit of neurofeedback, and therefore how often
 participants reach the colour reveal at all.
+
+## Serving neurofeedback over TCP (`gameNFv9.m` + `nf_tcp_server.py`)
+
+Every variant up to `gameNFv8.m` gets its neurofeedback by reading `nf.txt`
+off the local filesystem, which means the game machine and the machine
+writing that file have to share a disk (in the experiment room, the `X:`
+network share `RT_acquisition_8.m` writes to). `gameNFv9.m` adds a second
+way to get the same numbers: a TCP connection, so the two machines only need
+to be on the same network.
+
+Nothing downstream of the read changes. The clipping, the integrator, the
+green zone, the colour reveal, the triggers and both CSV files are identical
+to `gameNFv8.m`, and so are the values themselves — the server pushes the
+very same bytes `nf.txt` holds.
+
+### The wire format
+
+One NF sample is one **24-byte record: three little-endian doubles**,
+exactly as in `nf.txt`:
+
+    [SMI_19gt23, SMI_23gt19, sampleCount]
+
+Records are pushed back to back with no header and no framing bytes, roughly
+every 100 ms. Framing is unnecessary because TCP delivers a stream in order
+and without loss: a client that starts counting 24-byte groups from the
+moment it connects stays aligned for the whole session.
+`helperFunctions/readNfSample.m` does exactly that, keeping any trailing
+part-record in a buffer until the rest of it arrives.
+
+### Choosing the source in `gameNFv9.m`
+
+In the `%% PARAMETERS` block, under the neurofeedback settings:
+
+| Parameter | Meaning |
+| --- | --- |
+| `nfSourceType` | `'file'` (default — read `nf.txt`, same as `gameNFv8.m`) or `'tcp'` |
+| `nfFilePath` | the `nf.txt` to read when `nfSourceType = 'file'` |
+| `nfTcpHost` | IP address of the machine running the server (`'127.0.0.1'` = this machine) |
+| `nfTcpPort` | must match the server's `--port` (default `5006`) |
+| `nfTcpTimeoutSec` | how long to wait at startup for the connection *and* the first record |
+| `nfStreamStallWarnSec` | console warning (once per block) if no fresh sample arrives for this long mid-block |
+
+The source is opened **before** the PsychToolbox window, so a server that
+isn't running, a wrong address or a blocking firewall stops the script at
+the console with a diagnosis instead of behind a full-screen window. There
+is deliberately **no fallback to `nf.txt`**: a block that silently runs on a
+dead NF stream is a block of unusable data. For the same reason the
+connection isn't considered open until a first real record has arrived —
+a successful TCP connect only proves something is listening on that port.
+
+Once running, a stream that dies mid-block (server stopped, Wi-Fi dropped)
+prints a one-off `*** NF WARNING: no fresh NF sample for … ***` line. The
+block is not aborted — the participant is mid-trial, so whether the data is
+usable is the experimenter's call between blocks.
+
+### Running the server
+
+`nf_tcp_server.py` needs only Python 3 (no packages) and has two sources:
+
+    # Testing anywhere, no EEG hardware: same AR(1) fake values simulate_nf.py writes
+    python3 nf_tcp_server.py serve --source sim
+
+    # Experiment room: mirror the real nf.txt RT_acquisition_8.m is writing
+    python3 nf_tcp_server.py serve --source file --path X:\FeatureAttention\nf.txt
+
+`--source file` re-reads the file every `--poll-interval` seconds (default
+`0.05`, i.e. twice `RT_acquisition_8.m`'s own ~0.1 s write cadence, so a new
+value goes out within ~50 ms of being written) and skips reads that catch
+the file mid-rewrite. `RT_acquisition_8.m` itself is unchanged and doesn't
+know the server exists.
+
+The server binds `0.0.0.0` by default (every network interface, so other
+machines can reach it), takes any number of simultaneous clients, and never
+reads from them — a game that stalls for a frame cannot block it. On start
+it prints the LAN address clients should dial.
+
+### Running the game on another (Windows) machine
+
+1. **Same network.** Put both machines on the same Wi-Fi/LAN. A wired
+   connection or a dedicated router is worth it for an experiment: this is
+   real-time feedback, and campus Wi-Fi with client isolation enabled will
+   block machine-to-machine connections outright.
+2. **Start the server** on the machine that has the NF, and note the address
+   it prints (e.g. `192.168.1.24`). On Windows, `ipconfig` shows the same
+   thing under "IPv4 Address"; on macOS/Linux, `ifconfig` or `ip addr`.
+3. **Allow the port through the server machine's firewall.** This is the
+   step that most often looks like a broken network. On Windows, in an
+   Administrator PowerShell:
+
+        New-NetFirewallRule -DisplayName "NF TCP 5006" -Direction Inbound `
+            -Protocol TCP -LocalPort 5006 -Action Allow
+
+   On macOS, the first run prompts to allow incoming connections for Python
+   — accept it (System Settings → Network → Firewall → Options if it was
+   dismissed).
+4. **Point the game at it.** In `gameNFv9.m`, set `nfSourceType = 'tcp'` and
+   `nfTcpHost = '192.168.1.24'` (the address from step 2), leaving
+   `nfTcpPort` at the server's port. Run the script as usual.
+
+Addresses handed out by DHCP can change when a machine reconnects, so if a
+setup that worked yesterday fails today, re-check the address before
+anything else. A static/reserved IP for the acquisition machine avoids it.
+
+### Checking that it works
+
+Work outward — each step rules out one layer:
+
+1. **Server alone.** Start it and confirm it prints `NF TCP server
+   listening on 0.0.0.0:5006` plus a source line.
+2. **Stream on the server machine itself**, in a second terminal:
+
+        python3 nf_tcp_server.py probe 127.0.0.1 5006
+
+   It prints one line per record with the decoded values and the measured
+   gap between them, then a summary. Expect ~10 Hz and values roughly within
+   ±1. If this fails, the problem is the server or its source, not the
+   network. (With `--source file`, values frozen at exactly `0 0 0` mean the
+   file is being read fine but `RT_acquisition_8.m` isn't producing.)
+3. **Stream from the game machine**, over the network:
+
+        python3 nf_tcp_server.py probe 192.168.1.24 5006 --seconds 10
+
+   Same output = the network and both firewalls are fine, and MATLAB will
+   work too. `Connection refused` means nothing is listening there (server
+   not running, or wrong port). A long hang ending in a timeout means the
+   packets are being dropped — firewall on the server machine, or the two
+   machines aren't really on the same network. If Python isn't installed on
+   the game machine, PowerShell can do the connectivity half of the same
+   test: `Test-NetConnection 192.168.1.24 -Port 5006` (`TcpTestSucceeded :
+   True`).
+4. **MATLAB.** Run `gameNFv9.m` with `nfSourceType = 'tcp'`. Reaching the
+   instructions screen means the connection is open *and* records are
+   arriving — it prints `NF source: tcp://…:5006 streaming (first
+   sampleCount = N)`. Any failure before that names the cause.
+5. **Afterwards, in the data.** The per-trial NF trace CSV
+   (`data/pNNN_bNNN_leaves_nftrace.csv`) is logged every ~100 ms, and its
+   `NFValueRaw` column should move over the block rather than sit at one
+   value. Its `NFReadOk` column also distinguishes the two sources: with
+   `'file'` it is 1 on nearly every sample, while with `'tcp'` a 0 simply
+   means no new record had arrived since the previous frame, which is normal
+   for roughly five of every six frames at 60 Hz.
 
 ## GDF playback viewer
 
