@@ -1,46 +1,13 @@
-#!/usr/bin/env python3
-"""Serves the SSVEP neurofeedback stream over TCP instead of (or alongside)
-nf.txt, so the game machine can read NF over Wi-Fi/Ethernet from another
-computer instead of sharing a file.
+"""Serve SSVEP neurofeedback over TCP and receive Unity triggers over UDP.
 
-The wire format is deliberately identical to nf.txt's: each NF sample is one
-24-byte record of 3 little-endian doubles
+NF wire format: each sample is one 24-byte record containing three
+little-endian doubles, back to back with no header or framing bytes:
 
     [SMI_19gt23, SMI_23gt19, sampleCount]
 
-pushed to every connected client, back to back, with no header and no
-framing bytes. TCP already guarantees order and delivery, so a client that
-reads the stream from the moment it connects can never lose record
-alignment - it just accumulates bytes and takes the newest complete 24-byte
-group (see helperFunctions/readNfSample.m). Keeping the record identical to
-the file means the MATLAB side parses the same three doubles either way.
-
-Two sources:
-
-  serve --source sim
-      Generates fake values with the same bounded AR(1) random walk and the
-      same 13-samples-at-128Hz (~101.6 ms) cadence as simulate_nf.py, for
-      testing the whole chain on a machine with no EEG hardware.
-
-  serve --source file --path X:\\FeatureAttention\\nf.txt
-      Mirrors a real nf.txt written by RT_acquisition_8.m: polls the file
-      and pushes whatever it currently holds. Run this on (or next to) the
-      acquisition machine and the game machine no longer needs the network
-      share. Reads that catch the file mid-rewrite (RT_acquisition_8 opens
-      with 'w', which truncates, before writing the fresh bytes) are simply
-      skipped - the same I/O race readNFValue.m already tolerates - rather
-      than pushed as a spurious sample.
-
-The stream is push-only: the server never reads from its clients, so a game
-that stalls for a frame cannot make the server block. Clients that
-disconnect are dropped silently; a client can reconnect at any time and
-starts receiving from the next sample.
-
-    probe HOST PORT
-        Connects as a client, decodes the records, and prints them with the
-        measured inter-record interval - the quickest way to check that the
-        server, the network and the firewall are all letting the stream
-        through, without involving MATLAB or PsychToolbox.
+The Unity tablet connects to TCP port 5006 for NF and sends ASCII integer
+trigger datagrams to UDP port 5007 on this same computer. Every received
+trigger is printed immediately with a timestamp and sender address.
 """
 import argparse
 import errno
@@ -50,17 +17,19 @@ import socket
 import struct
 import sys
 import time
+from datetime import datetime
 
 SAMPLE_RATE_HZ = 128.0
 SAMPLES_PER_WRITE = 13
-WRITE_INTERVAL_SEC = SAMPLES_PER_WRITE / SAMPLE_RATE_HZ  # ~0.1016s, matches RT_acquisition_8's cadence
+WRITE_INTERVAL_SEC = SAMPLES_PER_WRITE / SAMPLE_RATE_HZ
 
-AR_COEFF = 0.95   # closer to 1 = slower/smoother drift
-NOISE_STD = 0.12  # per-step Gaussian noise scale, before clipping to [-1, 1]
+AR_COEFF = 0.95
+NOISE_STD = 0.12
 
 RECORD_FORMAT = '<3d'
-RECORD_BYTES = struct.calcsize(RECORD_FORMAT)  # 24
+RECORD_BYTES = struct.calcsize(RECORD_FORMAT)
 DEFAULT_PORT = 5006
+DEFAULT_TRIGGER_PORT = 5007
 
 
 def next_value(value):
@@ -69,7 +38,7 @@ def next_value(value):
 
 
 class SimSource(object):
-    """Fake NF, one bounded random walk per SMI column - see simulate_nf.py."""
+    """Fake NF, one bounded random walk per SMI column."""
 
     interval = WRITE_INTERVAL_SEC
 
@@ -91,7 +60,7 @@ class SimSource(object):
 
 
 class FileSource(object):
-    """Real NF, mirrored out of the nf.txt RT_acquisition_8.m keeps rewriting."""
+    """Real NF, mirrored from the nf.txt acquisition keeps rewriting."""
 
     def __init__(self, path, interval):
         self.path = path
@@ -103,36 +72,92 @@ class FileSource(object):
 
     def sample(self):
         try:
-            with open(self.path, 'rb') as f:
-                raw = f.read(RECORD_BYTES)
+            with open(self.path, 'rb') as source_file:
+                raw = source_file.read(RECORD_BYTES)
         except (IOError, OSError) as exc:
             if not self.warned_missing:
-                print('nf source unreadable (%s) - will keep retrying' % exc, file=sys.stderr)
+                print('nf source unreadable (%s) - will keep retrying' % exc,
+                      file=sys.stderr, flush=True)
                 self.warned_missing = True
             return None
+
         if len(raw) < RECORD_BYTES:
-            return None  # caught mid-rewrite; the next poll will get the whole record
+            return None
+
         if self.warned_missing:
-            print('nf source readable again: %s' % self.path, file=sys.stderr)
+            print('nf source readable again: %s' % self.path,
+                  file=sys.stderr, flush=True)
             self.warned_missing = False
         return struct.unpack(RECORD_FORMAT, raw)
 
 
 def local_ip_hint():
-    """Best guess at the LAN address a client on another machine should dial.
-
-    Opens a UDP socket towards a public address - no packet is actually
-    sent, but the OS has to pick the interface it would route through, which
-    is the one the game machine can reach.
-    """
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    """Best guess at the LAN address the Unity tablet should use."""
+    probe_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        probe.connect(('8.8.8.8', 80))
-        return probe.getsockname()[0]
+        probe_socket.connect(('8.8.8.8', 80))
+        return probe_socket.getsockname()[0]
     except OSError:
         return None
     finally:
-        probe.close()
+        probe_socket.close()
+
+
+def print_trigger(data, sender):
+    """Decode and immediately print one Unity ASCII-integer UDP trigger."""
+    timestamp = datetime.now().astimezone().isoformat(timespec='milliseconds')
+    try:
+        text = data.decode('ascii').strip()
+        value = int(text)
+    except (UnicodeDecodeError, ValueError):
+        print('%s  INVALID TRIGGER packet=%r  sender=%s:%d'
+              % (timestamp, data, sender[0], sender[1]), flush=True)
+        return False
+
+    print('%s  TRIGGER=%d  sender=%s:%d'
+          % (timestamp, value, sender[0], sender[1]), flush=True)
+    return True
+
+
+def accept_pending_clients(listener, clients):
+    while True:
+        try:
+            connection, address = listener.accept()
+        except (BlockingIOError, InterruptedError):
+            return
+        connection.setblocking(False)
+        connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        clients.append((connection, address))
+        print('client connected: %s:%d (%d connected)'
+              % (address[0], address[1], len(clients)), flush=True)
+
+
+def receive_pending_triggers(trigger_listener):
+    received = 0
+    while True:
+        try:
+            data, sender = trigger_listener.recvfrom(1024)
+        except (BlockingIOError, InterruptedError):
+            return received
+        if print_trigger(data, sender):
+            received += 1
+
+
+def send_nf_record(record, clients):
+    payload = struct.pack(RECORD_FORMAT, *record)
+    still_connected = []
+    for connection, address in clients:
+        try:
+            connection.sendall(payload)
+            still_connected.append((connection, address))
+        except OSError as exc:
+            if exc.errno not in (errno.EPIPE, errno.ECONNRESET,
+                                 errno.EWOULDBLOCK, errno.EAGAIN):
+                raise
+            print('client disconnected: %s:%d' % (address[0], address[1]),
+                  flush=True)
+            connection.close()
+    return still_connected
 
 
 def serve(args):
@@ -147,72 +172,75 @@ def serve(args):
     listener.listen(8)
     listener.setblocking(False)
 
+    trigger_listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    trigger_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    trigger_listener.bind((args.host, args.trigger_port))
+    trigger_listener.setblocking(False)
+
     hint = local_ip_hint()
     print('NF TCP server listening on %s:%d' % (args.host, args.port))
+    print('Trigger UDP listener on %s:%d' % (args.host, args.trigger_port))
     print('  source : %s' % source.describe())
     if hint and args.host in ('0.0.0.0', ''):
-        print('  clients on other machines should connect to %s:%d' % (hint, args.port))
-    print('  check it with: python nf_tcp_server.py probe %s %d' % (hint or '127.0.0.1', args.port))
-    print('Ctrl+C to stop.')
+        print('  Unity NF TCP Host / trigger destination: %s' % hint)
+        print('  Unity NF TCP Port: %d' % args.port)
+        print('  Unity Trigger Port: %d' % args.trigger_port)
+    print('  check NF with: python nf_tcp_server.py probe %s %d'
+          % (hint or '127.0.0.1', args.port))
+    print('Received triggers print immediately. Ctrl+C to stop.', flush=True)
 
     clients = []
     sent = 0
     skipped = 0
+    trigger_count = 0
     next_tick = time.monotonic()
+
     try:
         while True:
-            # Accept anyone who turned up since the last tick. select() with a
-            # zero timeout keeps this from ever delaying the sample cadence.
-            while True:
-                readable, _, _ = select.select([listener], [], [], 0)
-                if not readable:
-                    break
-                conn, addr = listener.accept()
-                conn.setblocking(False)
-                conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                clients.append((conn, addr))
-                print('client connected: %s:%d (%d connected)' % (addr[0], addr[1], len(clients)))
+            wait_seconds = max(0.0, next_tick - time.monotonic())
+            readable, _, _ = select.select(
+                [listener, trigger_listener], [], [], wait_seconds)
+
+            if listener in readable:
+                accept_pending_clients(listener, clients)
+            if trigger_listener in readable:
+                trigger_count += receive_pending_triggers(trigger_listener)
+
+            now = time.monotonic()
+            if now < next_tick:
+                continue
 
             record = source.sample()
             if record is None:
                 skipped += 1
             else:
-                payload = struct.pack(RECORD_FORMAT, *record)
-                still_connected = []
-                for conn, addr in clients:
-                    try:
-                        conn.sendall(payload)
-                        still_connected.append((conn, addr))
-                    except OSError as exc:
-                        if exc.errno not in (errno.EPIPE, errno.ECONNRESET, errno.EWOULDBLOCK, errno.EAGAIN):
-                            raise
-                        print('client disconnected: %s:%d' % (addr[0], addr[1]))
-                        conn.close()
-                clients = still_connected
+                clients = send_nf_record(record, clients)
                 sent += 1
 
             if args.verbose and record is not None and sent % 10 == 0:
-                print('sent %d records to %d client(s): [% .4f, % .4f, %d] (%d skipped)'
-                      % (sent, len(clients), record[0], record[1], int(record[2]), skipped))
+                print('sent %d records to %d client(s): [% .4f, % .4f, %d] '
+                      '(%d skipped, %d triggers)'
+                      % (sent, len(clients), record[0], record[1],
+                         int(record[2]), skipped, trigger_count), flush=True)
 
             next_tick += source.interval
-            sleep_for = next_tick - time.monotonic()
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-            else:
-                next_tick = time.monotonic()  # fell behind - resync instead of spinning to catch up
+            if next_tick <= now:
+                next_tick = now + source.interval
+
     except KeyboardInterrupt:
-        print('\nStopped after %d records (%d skipped).' % (sent, skipped))
+        print('\nStopped after %d records (%d skipped) and %d triggers.'
+              % (sent, skipped, trigger_count))
     finally:
-        for conn, _ in clients:
-            conn.close()
+        for connection, _ in clients:
+            connection.close()
+        trigger_listener.close()
         listener.close()
 
 
 def probe(args):
     print('connecting to %s:%d ...' % (args.host, args.port))
-    conn = socket.create_connection((args.host, args.port), timeout=args.timeout)
-    conn.settimeout(args.timeout)
+    connection = socket.create_connection((args.host, args.port), timeout=args.timeout)
+    connection.settimeout(args.timeout)
     print('connected. Ctrl+C to stop.')
 
     buffer = b''
@@ -224,70 +252,79 @@ def probe(args):
             if args.seconds and time.monotonic() - started >= args.seconds:
                 break
             try:
-                chunk = conn.recv(4096)
+                chunk = connection.recv(4096)
             except socket.timeout:
-                print('!! no data for %.1fs - server connected but is not sending' % args.timeout)
+                print('!! no data for %.1fs - server connected but is not sending'
+                      % args.timeout)
                 continue
             if not chunk:
                 print('!! server closed the connection')
                 break
             buffer += chunk
             while len(buffer) >= RECORD_BYTES:
-                smi1, smi2, sample_count = struct.unpack(RECORD_FORMAT, buffer[:RECORD_BYTES])
+                smi1, smi2, sample_count = struct.unpack(
+                    RECORD_FORMAT, buffer[:RECORD_BYTES])
                 buffer = buffer[RECORD_BYTES:]
                 now = time.monotonic()
-                gap_ms = (now - previous) * 1000 if previous is not None else float('nan')
+                gap_ms = ((now - previous) * 1000
+                          if previous is not None else float('nan'))
                 previous = now
                 count += 1
-                print('#%-6d SMI_19gt23=% .5f  SMI_23gt19=% .5f  sampleCount=%-8d  +%6.1f ms'
+                print('#%-6d SMI_19gt23=% .5f  SMI_23gt19=% .5f  '
+                      'sampleCount=%-8d  +%6.1f ms'
                       % (count, smi1, smi2, int(sample_count), gap_ms))
     except KeyboardInterrupt:
         pass
     finally:
-        conn.close()
+        connection.close()
 
     elapsed = time.monotonic() - started
     if count:
-        print('\n%d records in %.1fs (%.1f Hz) - stream is alive.' % (count, elapsed, count / elapsed))
+        print('\n%d records in %.1fs (%.1f Hz) - stream is alive.'
+              % (count, elapsed, count / elapsed))
     else:
-        print('\nNo records received in %.1fs - the server is reachable but not streaming.' % elapsed)
+        print('\nNo records received in %.1fs - server is reachable but not streaming.'
+              % elapsed)
     return 0 if count else 1
 
 
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest='command')
+    subparsers = parser.add_subparsers(dest='command')
 
-    p_serve = sub.add_parser('serve', help='stream NF records to connected clients')
-    p_serve.add_argument('--source', choices=['sim', 'file'], default='sim',
-                         help='sim = generated test values; file = mirror a real nf.txt (default: sim)')
-    p_serve.add_argument('--path', default='nf.txt',
-                         help='nf.txt to mirror when --source file (default: ./nf.txt)')
-    p_serve.add_argument('--host', default='0.0.0.0',
-                         help='interface to listen on; 0.0.0.0 = every interface, so other '
-                              'machines on the network can connect (default: 0.0.0.0)')
-    p_serve.add_argument('--port', type=int, default=DEFAULT_PORT,
-                         help='TCP port to listen on (default: %d)' % DEFAULT_PORT)
-    p_serve.add_argument('--poll-interval', type=float, default=0.05,
-                         help='how often to re-read nf.txt when --source file, in seconds. '
-                              'Default 0.05 = twice RT_acquisition_8 own ~0.1s write cadence, '
-                              'so a fresh value is forwarded within ~50ms of being written.')
-    p_serve.add_argument('--seed', type=int, default=None,
-                         help='random seed for --source sim, for reproducible test runs')
-    p_serve.add_argument('--verbose', action='store_true',
-                         help='print every 10th record as it goes out')
-    p_serve.set_defaults(func=serve)
+    serve_parser = subparsers.add_parser(
+        'serve', help='stream NF over TCP and receive Unity triggers over UDP')
+    serve_parser.add_argument('--source', choices=['sim', 'file'], default='sim',
+                              help='sim = generated values; file = mirror nf.txt')
+    serve_parser.add_argument('--path', default='nf.txt',
+                              help='nf.txt to mirror with --source file')
+    serve_parser.add_argument('--host', default='0.0.0.0',
+                              help='interface for both sockets (default: 0.0.0.0)')
+    serve_parser.add_argument('--port', type=int, default=DEFAULT_PORT,
+                              help='NF TCP port (default: %d)' % DEFAULT_PORT)
+    serve_parser.add_argument('--trigger-port', type=int,
+                              default=DEFAULT_TRIGGER_PORT,
+                              help='trigger UDP port (default: %d)'
+                                   % DEFAULT_TRIGGER_PORT)
+    serve_parser.add_argument('--poll-interval', type=float, default=0.05,
+                              help='nf.txt polling interval in seconds')
+    serve_parser.add_argument('--seed', type=int, default=None,
+                              help='random seed for simulated NF')
+    serve_parser.add_argument('--verbose', action='store_true',
+                              help='print every 10th NF record')
+    serve_parser.set_defaults(func=serve)
 
-    p_probe = sub.add_parser('probe', help='connect as a client and print the decoded stream')
-    p_probe.add_argument('host', help='address of the machine running "serve"')
-    p_probe.add_argument('port', type=int, nargs='?', default=DEFAULT_PORT,
-                         help='port the server is listening on (default: %d)' % DEFAULT_PORT)
-    p_probe.add_argument('--seconds', type=float, default=None,
-                         help='stop after this many seconds instead of running until Ctrl+C')
-    p_probe.add_argument('--timeout', type=float, default=3.0,
-                         help='seconds of silence before complaining (default: 3)')
-    p_probe.set_defaults(func=probe)
+    probe_parser = subparsers.add_parser(
+        'probe', help='connect as a client and print decoded NF')
+    probe_parser.add_argument('host', help='address of the NF server')
+    probe_parser.add_argument('port', type=int, nargs='?', default=DEFAULT_PORT,
+                              help='NF TCP port (default: %d)' % DEFAULT_PORT)
+    probe_parser.add_argument('--seconds', type=float, default=None,
+                              help='stop after this many seconds')
+    probe_parser.add_argument('--timeout', type=float, default=3.0,
+                              help='silence timeout in seconds')
+    probe_parser.set_defaults(func=probe)
 
     args = parser.parse_args()
     if not getattr(args, 'command', None):
