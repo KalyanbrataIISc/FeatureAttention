@@ -375,9 +375,9 @@ freqC2Hz = 23;
 % nf.txt holds, roughly every 100 ms, so nothing downstream of the read can
 % tell them apart. See openNfSource.m/readNfSample.m, and README.md's
 % "Serving neurofeedback over TCP" for how to start the server and check it.
-nfSourceType        = 'file'; % 'file' = read nf.txt on this machine; 'tcp' = read from nf_tcp_server.py over the network
+nfSourceType        = 'tcp'; % 'file' = read nf.txt on this machine; 'tcp' = read from nf_tcp_server.py over the network
 nfFilePath          = fullfile(experimentRoot, 'nf.txt');
-nfTcpHost           = '127.0.0.1'; % nfSourceType 'tcp': IP address of the machine running nf_tcp_server.py ('127.0.0.1' = this one)
+nfTcpHost           = '10.36.17.144'; % nfSourceType 'tcp': IP address of the machine running nf_tcp_server.py ('127.0.0.1' = this one)
 nfTcpPort           = 5006;        % nfSourceType 'tcp': must match the server's --port
 nfTcpTimeoutSec     = 10;          % nfSourceType 'tcp': how long to wait at startup for the connection AND the first record before giving up
 nfStreamStallWarnSec = 2.0;        % nfSourceType 'tcp': console warning (once per block) if no fresh sample arrives for this long mid-block
