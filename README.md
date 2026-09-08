@@ -1470,6 +1470,12 @@ During the bilateral stimulus, the arrow is replaced by a small central
 fixation cross. The participant reports only the parity of the cued stream;
 the uncued stream is ignored for scoring.
 
+`gratingCenterOffsetPx` sets the horizontal distance in pixels from screen
+center to each patch center. The left and right patches use the negative and
+positive versions of this offset, respectively, so their placement remains
+symmetric. The startup geometry checks reject offsets that make the patches
+overlap or extend beyond the display.
+
 Cue sides are shuffled and balanced within each block (with one extra trial
 on one side if `trialNumberPerBlock` is odd). The trial-start trigger is sent
 immediately after the first bilateral stimulus frame: `20` for a left-cued

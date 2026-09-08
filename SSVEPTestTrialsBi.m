@@ -118,6 +118,7 @@ xCountMax = 5; % upper bound (both randomized per trial via ssvepTestHelperFunct
 % below), not by a texture rebuilt every frame.
 leftGratingFreqHz     = 16;   % left patch contrast-flicker frequency (Hz)
 rightGratingFreqHz    = 20;   % right patch contrast-flicker frequency (Hz)
+gratingCenterOffsetPx = 400;  % horizontal distance from screen center to each patch center
 gratingPatchRadiusPx  = 300;  % radius of the circular grating patch
 gratingBarWidthPx     = 20;   % width of each grating bar
 gratingMidColor       = grey; % contrast trough - must match the background so the patch vanishes, not just dims
@@ -159,9 +160,8 @@ Screen('ColorRange', window, 255);
 Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 [xCenter, yCenter] = RectCenter(windowRect);
-screenWidthPx = RectWidth(windowRect);
-leftPatchCenterX = xCenter - screenWidthPx / 4;
-rightPatchCenterX = xCenter + screenWidthPx / 4;
+leftPatchCenterX = xCenter - gratingCenterOffsetPx;
+rightPatchCenterX = xCenter + gratingCenterOffsetPx;
 gratingPatchDiameterPx = gratingPatchRadiusPx * 2;
 leftGratingPatchRect = [leftPatchCenterX - gratingPatchRadiusPx, yCenter - gratingPatchRadiusPx, ...
                         leftPatchCenterX + gratingPatchRadiusPx, yCenter + gratingPatchRadiusPx];
