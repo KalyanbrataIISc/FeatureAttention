@@ -8,7 +8,7 @@
 clc;        % Clears the Command Window
 close all;  % Closes all figure windows
 sca;        % Clears the screen
-testing = true; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
+testing = false; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
 
 if ~testing
     s=instrfind; %#ok<INSTRF>
@@ -69,6 +69,8 @@ PsychDefaultSetup(2);
 if testing || ismac
     Screen('Preference', 'SkipSyncTests', 1);
 end
+
+Screen('Preference', 'SkipSyncTests', 1);
 
 % Unify key names across different operating systems
 KbName('UnifyKeyNames');
