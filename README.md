@@ -1459,9 +1459,33 @@ mac. All tunable values (timing, letter pool/counts, grating geometry/color,
 disc/letter appearance) are in the `%% PARAMETERS` block near the top of
 `SSVEPTestTrials.m`.
 
+### Bilateral SSVEP extension (`SSVEPTestTrialsBi.m`)
+
+`SSVEPTestTrialsBi.m` preserves the odd/even X-count task but presents two
+patches simultaneously: the left patch flickers at 16 Hz and the right patch
+at 20 Hz. Each patch has its own independently generated letter sequence and
+X count. Before every trial, a central arrow is shown for `cueDurationSec`
+(1 second by default), indicating which stream the participant must count.
+During the bilateral stimulus, the arrow is replaced by a small central
+fixation cross. The participant reports only the parity of the cued stream;
+the uncued stream is ignored for scoring.
+
+Cue sides are shuffled and balanced within each block (with one extra trial
+on one side if `trialNumberPerBlock` is odd). The trial-start trigger is sent
+immediately after the first bilateral stimulus frame: `20` for a left-cued
+trial and `21` for a right-cued trial. The stream-offset trigger remains `30`,
+and a valid odd/even response remains `40`. No trigger is sent for cue onset.
+
+The bilateral trial CSV is
+`p<participant>_b<block>_ssveptestbi_trialdata.csv` and records `CueSide`,
+`TrialStartTrigger`, both letter sequences and both X counts, plus the cued X
+count and the original response/accuracy/timing fields. Dropped frames use the
+separate `p<participant>_b<block>_ssveptestbi_droppedframes.csv` file.
+
 ---
 **Keeping this file in sync**: whenever `gameNFv5.m`, `gameNFv4.m`, `gameNFv3.m`,
-`gameBreakoutv2.m`, `gameBreakoutv3_WL.m`, `SSVEPTestTrials.m`, anything in
+`gameBreakoutv2.m`, `gameBreakoutv3_WL.m`, `SSVEPTestTrials.m`,
+`SSVEPTestTrialsBi.m`, anything in
 `legacy/` (or their helper functions) changes in a way that affects
 behavior, parameters, timing, triggers, or CSV columns, update this README
 to match in the same change. See `CLAUDE.md`.
