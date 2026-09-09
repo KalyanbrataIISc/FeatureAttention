@@ -9,7 +9,7 @@ from scipy import signal
 
 
 RAW_EEG_CSV_FILE_PATH = Path(
-    r"oldData\data\eeg_20260831_151524_raw.csv"
+    r"logs\eeg_20260909_152805\eeg_20260909_152805_raw.csv"
 )
 SAMPLING_RATE = 250.0
 TRIAL_START_TRIGGER = 20

@@ -1,4 +1,4 @@
-"""Plot EEG power and spectral SNR for left- and right-cued SSVEP trials."""
+"""Plot EEG power and spectral SNR by cue side and across all SSVEP trials."""
 
 from pathlib import Path
 
@@ -9,7 +9,7 @@ from scipy import signal
 
 
 RAW_EEG_CSV_FILE_PATH = Path(
-    r"logs\eeg_20260908_194158\eeg_20260908_194158_raw.csv"
+    r"logs\eeg_20260909_172031\eeg_20260909_172031_raw.csv"
 )
 SAMPLING_RATE = 250.0
 LEFT_TRIAL_START_TRIGGER = 20
@@ -40,6 +40,17 @@ CHANNELS = {
     "raw15": "O2",
     "raw16": "O1",
 }
+
+# CHANNELS = {
+#     # "raw9": "Cz",
+#     "raw10": "Pz",
+#     "raw11": "P4",
+#     # "raw12": "T6",
+#     # "raw13": "T5",
+#     "raw14": "P3",
+#     "raw15": "O2",
+#     "raw16": "O1",
+# }
 
 
 def first_rows_of_marker_runs(markers: np.ndarray, value: int) -> np.ndarray:
@@ -183,7 +194,7 @@ def spectral_snr_db(power: np.ndarray) -> np.ndarray:
 def plot_spectra(
     epochs: np.ndarray, trial_types: np.ndarray, source: Path
 ) -> None:
-    """Plot conventional PSD and locally normalized SSVEP spectra by side."""
+    """Plot induced, normalized, and evoked spectra by side and overall."""
     frequencies, _ = periodogram(epochs[0])
     trial_psds = np.stack([periodogram(epoch)[1] for epoch in epochs])
     frequency_mask = (
@@ -192,20 +203,26 @@ def plot_spectra(
     labels = list(CHANNELS.values())
     eps = np.finfo(float).tiny
     conditions = (
-        (LEFT_TRIAL_START_TRIGGER, "Left trials (marker 20)"),
-        (RIGHT_TRIAL_START_TRIGGER, "Right trials (marker 21)"),
+        (trial_types == LEFT_TRIAL_START_TRIGGER, "Left trials (marker 20)"),
+        (trial_types == RIGHT_TRIAL_START_TRIGGER, "Right trials (marker 21)"),
+        (np.ones(len(trial_types), dtype=bool), "All trials"),
     )
 
     fig, axes = plt.subplots(
-        2, 2, figsize=(15, 9), sharex=True, constrained_layout=True
+        len(conditions),
+        3,
+        figsize=(21, 13),
+        sharex=True,
+        constrained_layout=True,
     )
-    for row, (trigger, condition_title) in enumerate(conditions):
-        condition_psds = trial_psds[trial_types == trigger]
-        if not len(condition_psds):
+    for row, (trial_mask, condition_title) in enumerate(conditions):
+        condition_epochs = epochs[trial_mask]
+        if not len(condition_epochs):
             for ax in axes[row]:
                 ax.text(0.5, 0.5, "No clean trials", ha="center", va="center")
             continue
 
+        condition_psds = trial_psds[trial_mask]
         average_psd = condition_psds.mean(axis=0)
         displays = (
             (
@@ -241,6 +258,34 @@ def plot_spectra(
             ax.set_title(f"{condition_title}: {metric_title}")
             ax.set_ylabel(ylabel)
             ax.grid(alpha=0.25)
+
+        # Average epochs in the time domain before spectral estimation so this
+        # panel emphasizes phase-locked activity. Keep channels separate here:
+        # their voltage mean is zero by construction after average referencing.
+        evoked_waveform = condition_epochs.mean(axis=0)
+        _, evoked_power = periodogram(evoked_waveform)
+        evoked_power_db = 10.0 * np.log10(np.maximum(evoked_power, eps))
+        evoked_ax = axes[row, 2]
+        for channel_index, label in enumerate(labels):
+            evoked_ax.plot(
+                frequencies[frequency_mask],
+                evoked_power_db[frequency_mask, channel_index],
+                linewidth=1.0,
+                alpha=0.68,
+                label=label,
+            )
+        evoked_ax.plot(
+            frequencies[frequency_mask],
+            evoked_power_db[frequency_mask].mean(axis=1),
+            color="black",
+            linewidth=2.2,
+            label="channel mean",
+        )
+        for target in TARGET_FREQUENCIES_HZ:
+            evoked_ax.axvline(target, color="crimson", linestyle="--", alpha=0.7)
+        evoked_ax.set_title(f"{condition_title}: Evoked power")
+        evoked_ax.set_ylabel(r"PSD ($\mathrm{dB\;\mu V^2/Hz}$)")
+        evoked_ax.grid(alpha=0.25)
 
     axes[0, 0].legend(ncol=3, fontsize=9)
     for ax in axes[-1]:

@@ -1488,6 +1488,12 @@ The bilateral trial CSV is
 count and the original response/accuracy/timing fields. Dropped frames use the
 separate `p<participant>_b<block>_ssveptestbi_droppedframes.csv` file.
 
+`analysisSSVEPcsvBi.py` plots PSD, local spectral SNR, and evoked power for
+clean left-cued trials, right-cued trials, and all clean trials pooled
+together. Evoked power is calculated after averaging the time-domain data
+across all epochs within each row, retaining each selected EEG channel before
+computing its spectrum; the panel also shows the mean of the channel spectra.
+
 ---
 **Keeping this file in sync**: whenever `gameNFv5.m`, `gameNFv4.m`, `gameNFv3.m`,
 `gameBreakoutv2.m`, `gameBreakoutv3_WL.m`, `SSVEPTestTrials.m`,
