@@ -8,7 +8,7 @@
 clc;        % Clears the Command Window
 close all;  % Closes all figure windows
 sca;        % Clears the screen
-testing = false; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
+testing = true; %#ok<*UNRCH> % true = laptop testing; false = experiment-room hardware
 
 if ~testing
     s=instrfind; %#ok<INSTRF>

@@ -28,6 +28,10 @@ PLOT_RANGE_HZ = (5.0, 30.0)
 TARGET_FREQUENCIES_HZ = (16.0, 20.0)
 SNR_GUARD_BINS = 2
 SNR_NOISE_BINS = 16
+SAVE_INDIVIDUAL_PLOTS = True
+PLOT_OUTPUT_DIRECTORY = Path("analysis/results/analysisSSVEPcsvBi")
+SAVED_PLOT_FORMATS = ("pdf", "png")
+SAVED_PLOT_DPI = 600
 
 # CSV channel number -> scalp label (from the acquisition montage).
 CHANNELS = {
@@ -191,9 +195,71 @@ def spectral_snr_db(power: np.ndarray) -> np.ndarray:
     return snr
 
 
+def save_publication_plot(
+    frequencies: np.ndarray,
+    values: np.ndarray,
+    ylabel: str,
+    title: str,
+    output_stem: Path,
+) -> list[Path]:
+    """Save one channel-mean spectrum as vector PDF and high-resolution PNG."""
+    saved_paths: list[Path] = []
+    publication_style = {
+        "font.family": "sans-serif",
+        "font.size": 11,
+        "axes.labelsize": 12,
+        "axes.titlesize": 13,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+    with plt.rc_context(publication_style):
+        fig, ax = plt.subplots(figsize=(7.0, 4.5), constrained_layout=True)
+        ax.plot(
+            frequencies,
+            values,
+            color="black",
+            linewidth=1.8,
+            label="Channel mean",
+        )
+        for target in TARGET_FREQUENCIES_HZ:
+            ax.axvline(
+                target,
+                color="#D55E00",
+                linestyle="--",
+                linewidth=1.2,
+                alpha=0.9,
+                label=f"{target:g} Hz",
+            )
+        ax.set(
+            title=title,
+            xlabel="Frequency (Hz)",
+            ylabel=ylabel,
+            xlim=PLOT_RANGE_HZ,
+        )
+        ax.xaxis.set_major_locator(MultipleLocator(1.0))
+        ax.grid(axis="y", color="0.85", linewidth=0.7)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.legend(frameon=False, ncol=3, loc="best")
+
+        output_stem.parent.mkdir(parents=True, exist_ok=True)
+        for extension in SAVED_PLOT_FORMATS:
+            output_path = output_stem.with_suffix(f".{extension}")
+            fig.savefig(
+                output_path,
+                dpi=SAVED_PLOT_DPI,
+                bbox_inches="tight",
+                facecolor="white",
+            )
+            saved_paths.append(output_path)
+        plt.close(fig)
+    return saved_paths
+
+
 def plot_spectra(
     epochs: np.ndarray, trial_types: np.ndarray, source: Path
-) -> None:
+) -> list[Path]:
     """Plot induced, normalized, and evoked spectra by side and overall."""
     frequencies, _ = periodogram(epochs[0])
     trial_psds = np.stack([periodogram(epoch)[1] for epoch in epochs])
@@ -203,10 +269,19 @@ def plot_spectra(
     labels = list(CHANNELS.values())
     eps = np.finfo(float).tiny
     conditions = (
-        (trial_types == LEFT_TRIAL_START_TRIGGER, "Left trials (marker 20)"),
-        (trial_types == RIGHT_TRIAL_START_TRIGGER, "Right trials (marker 21)"),
-        (np.ones(len(trial_types), dtype=bool), "All trials"),
+        (
+            trial_types == LEFT_TRIAL_START_TRIGGER,
+            "Left trials (marker 20)",
+            "left_trials",
+        ),
+        (
+            trial_types == RIGHT_TRIAL_START_TRIGGER,
+            "Right trials (marker 21)",
+            "right_trials",
+        ),
+        (np.ones(len(trial_types), dtype=bool), "All trials", "all_trials"),
     )
+    saved_paths: list[Path] = []
 
     fig, axes = plt.subplots(
         len(conditions),
@@ -215,7 +290,7 @@ def plot_spectra(
         sharex=True,
         constrained_layout=True,
     )
-    for row, (trial_mask, condition_title) in enumerate(conditions):
+    for row, (trial_mask, condition_title, condition_slug) in enumerate(conditions):
         condition_epochs = epochs[trial_mask]
         if not len(condition_epochs):
             for ax in axes[row]:
@@ -229,14 +304,18 @@ def plot_spectra(
                 10.0 * np.log10(np.maximum(average_psd, eps)),
                 r"PSD ($\mathrm{dB\;\mu V^2/Hz}$)",
                 "Average power",
+                "average_power",
             ),
             (
                 spectral_snr_db(average_psd),
                 "Spectral SNR (dB)",
                 "Local spectral SNR",
+                "spectral_snr",
             ),
         )
-        for column, (display, ylabel, metric_title) in enumerate(displays):
+        for column, (display, ylabel, metric_title, metric_slug) in enumerate(
+            displays
+        ):
             ax = axes[row, column]
             for channel_index, label in enumerate(labels):
                 ax.plot(
@@ -246,9 +325,10 @@ def plot_spectra(
                     alpha=0.68,
                     label=label,
                 )
+            channel_mean = display.mean(axis=1)
             ax.plot(
                 frequencies[frequency_mask],
-                display[frequency_mask].mean(axis=1),
+                channel_mean[frequency_mask],
                 color="black",
                 linewidth=2.2,
                 label="channel mean",
@@ -258,6 +338,17 @@ def plot_spectra(
             ax.set_title(f"{condition_title}: {metric_title}")
             ax.set_ylabel(ylabel)
             ax.grid(alpha=0.25)
+            if SAVE_INDIVIDUAL_PLOTS:
+                saved_paths.extend(
+                    save_publication_plot(
+                        frequencies[frequency_mask],
+                        channel_mean[frequency_mask],
+                        ylabel,
+                        f"{condition_title}: {metric_title}",
+                        PLOT_OUTPUT_DIRECTORY
+                        / f"{source.stem}_{condition_slug}_{metric_slug}",
+                    )
+                )
 
         # Average epochs in the time domain before spectral estimation so this
         # panel emphasizes phase-locked activity. Keep channels separate here:
@@ -265,6 +356,7 @@ def plot_spectra(
         evoked_waveform = condition_epochs.mean(axis=0)
         _, evoked_power = periodogram(evoked_waveform)
         evoked_power_db = 10.0 * np.log10(np.maximum(evoked_power, eps))
+        evoked_channel_mean = evoked_power_db.mean(axis=1)
         evoked_ax = axes[row, 2]
         for channel_index, label in enumerate(labels):
             evoked_ax.plot(
@@ -276,7 +368,7 @@ def plot_spectra(
             )
         evoked_ax.plot(
             frequencies[frequency_mask],
-            evoked_power_db[frequency_mask].mean(axis=1),
+            evoked_channel_mean[frequency_mask],
             color="black",
             linewidth=2.2,
             label="channel mean",
@@ -286,6 +378,17 @@ def plot_spectra(
         evoked_ax.set_title(f"{condition_title}: Evoked power")
         evoked_ax.set_ylabel(r"PSD ($\mathrm{dB\;\mu V^2/Hz}$)")
         evoked_ax.grid(alpha=0.25)
+        if SAVE_INDIVIDUAL_PLOTS:
+            saved_paths.extend(
+                save_publication_plot(
+                    frequencies[frequency_mask],
+                    evoked_channel_mean[frequency_mask],
+                    r"PSD ($\mathrm{dB\;\mu V^2/Hz}$)",
+                    f"{condition_title}: Evoked power",
+                    PLOT_OUTPUT_DIRECTORY
+                    / f"{source.stem}_{condition_slug}_evoked_power",
+                )
+            )
 
     axes[0, 0].legend(ncol=3, fontsize=9)
     for ax in axes[-1]:
@@ -298,6 +401,7 @@ def plot_spectra(
         fontsize=13,
     )
     plt.show()
+    return saved_paths
 
 
 def main() -> None:
@@ -320,7 +424,12 @@ def main() -> None:
         f"{np.count_nonzero(trial_types == LEFT_TRIAL_START_TRIGGER)}, right 21 = "
         f"{np.count_nonzero(trial_types == RIGHT_TRIAL_START_TRIGGER)}"
     )
-    plot_spectra(epochs, trial_types, RAW_EEG_CSV_FILE_PATH)
+    saved_paths = plot_spectra(epochs, trial_types, RAW_EEG_CSV_FILE_PATH)
+    if saved_paths:
+        print(
+            f"Saved {len(saved_paths)} publication plots to "
+            f"{PLOT_OUTPUT_DIRECTORY.resolve()}"
+        )
 
 
 if __name__ == "__main__":

@@ -1493,6 +1493,10 @@ clean left-cued trials, right-cued trials, and all clean trials pooled
 together. Evoked power is calculated after averaging the time-domain data
 across all epochs within each row, retaining each selected EEG channel before
 computing its spectrum; the panel also shows the mean of the channel spectra.
+Set `SAVE_INDIVIDUAL_PLOTS` to save every condition/metric panel separately
+with only its channel-mean trace. By default, the script writes vector PDF and
+600-DPI PNG files to `analysis/results/analysisSSVEPcsvBi/`; the output folder,
+formats, and resolution are configurable in the script's parameter block.
 
 ---
 **Keeping this file in sync**: whenever `gameNFv5.m`, `gameNFv4.m`, `gameNFv3.m`,
