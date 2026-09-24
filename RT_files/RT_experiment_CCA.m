@@ -15,11 +15,11 @@ run_no = input('Enter run no');
 method = 'DSS';
 channels = 41;        
 Fs = 128;
-SSVEP_freq = [19 23];
+SSVEP_freq = [17 19];
 % Noise_freq = [22 24 28 30];
 cut_off_init = [0,0]; %cc
 delta = [2,2];  %cc % vestigial - alpha/AMI feedback is disabled in RT_acquisition_8.m, so this gain is no longer used; still passed through harmlessly
-deltas = [0.2,0.2];  %cc % SMI/SSVEP feedback gain - this is the one that matters now
+deltas = [2,2];  %cc % SMI/SSVEP feedback gain - this is the one that matters now
 %Verification and Cut_off calibration 
 
 run_no = run_no - 1;

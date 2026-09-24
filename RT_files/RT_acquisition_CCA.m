@@ -9,7 +9,7 @@ global run;
 run = true;
 channels = 41; % set to the same value as in Actiview "Channels sent by TCP" Fs = 128;
 Fs = 128;
-SSVEP_freq = [19 23];
+SSVEP_freq = [17 19];
 trial_on = false;
 
 subject_no = 9988;
