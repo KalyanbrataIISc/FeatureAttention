@@ -17,6 +17,10 @@ switch name_of_trigger
         pval=15;
     case 'trialstart'
         pval=20;
+    case 'trialstart_left'
+        pval=20;
+    case 'trialstart_right'
+        pval=21;
     case 'cueonset'
         pval=45;
     % case 'baseline_set'
