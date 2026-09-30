@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaf Game + Biosemi | USB setup</title>
+<style>
+:root{--ink:#14253a;--muted:#53667d;--blue:#0676a9;--orange:#f28b35;--line:#dce7ef;--bg:#f5f8fb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.62 Segoe UI,Arial,sans-serif}
+header{background:#102943;color:white;padding:52px max(22px,calc((100vw - 1100px)/2)) 44px}header h1{font-size:clamp(34px,5vw,57px);line-height:1.08;margin:10px 0}header p{max-width:760px;color:#d8e7f4;font-size:20px;margin:0}.eyebrow{letter-spacing:.16em;text-transform:uppercase;font-size:12px;font-weight:700;color:#7dd2f5}
+main{max-width:1100px;margin:auto;padding:24px 22px 72px}section{background:white;border:1px solid var(--line);border-radius:18px;padding:30px;margin:24px 0;box-shadow:0 10px 35px #17324c0b}
+h2{font-size:29px;line-height:1.2;margin:0 0 15px}h3{font-size:21px;margin:28px 0 7px}p{margin:0 0 15px}figure{margin:0}figure img{display:block;width:100%;height:auto;border-radius:13px}figcaption{font-size:14px;color:var(--muted);margin:9px 2px}.hero{padding:12px}.hero img{max-height:590px;object-fit:contain}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{border:1px solid var(--line);border-radius:13px;padding:18px;background:#fbfdff}.card b{display:block;color:var(--blue);margin-bottom:5px}.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:8px;margin:22px 0}.node{background:#ebf6fb;border:1px solid #b7dceb;border-radius:13px;text-align:center;padding:17px 8px;font-weight:700}.arrow{font-size:24px;color:var(--blue)}.callout{border-left:5px solid var(--orange);background:#fff8ef;padding:16px 18px;border-radius:0 9px 9px 0;margin:20px 0}.steps{counter-reset:step;list-style:none;padding:0;margin:0}.steps li{counter-increment:step;position:relative;padding:0 0 24px 54px;border-left:2px solid var(--line);margin-left:17px}.steps li:last-child{border-left:0;padding-bottom:0}.steps li:before{content:counter(step);position:absolute;left:-18px;top:0;width:34px;height:34px;background:var(--blue);color:#fff;border-radius:50%;display:grid;place-items:center;font-weight:700}.steps strong{display:block;font-size:20px;margin-bottom:5px}code{background:#edf3f7;border-radius:4px;padding:2px 5px;font:15px Consolas,monospace}pre{background:#102943;color:#e8f7ff;overflow:auto;border-radius:9px;padding:16px;line-height:1.5}pre code{background:none;color:inherit;padding:0}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}th{background:#eef6fb}small{color:var(--muted)}a{color:var(--blue)}.two{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:center}
+@media(max-width:700px){.grid,.two{grid-template-columns:1fr}.flow{grid-template-columns:1fr;gap:4px}.arrow{transform:rotate(90deg);text-align:center}section{padding:20px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">Experiment room / operator guide</div>
+  <h1>Leaf Game with Biosemi EEG</h1>
+  <p>Run the Unity game on the tablet. P sends markers through the registered trigger adapter and returns live neurofeedback from A over the tablet USB cable.</p>
+</header>
+<main>
+<section class="hero">
+  <figure><img src="biosemi-usb-setup.png" alt="Tablet, presentation computer, acquisition computer, EEG amplifier and cap"><figcaption>Tablet USB carries the game connection. The separate P-to-A trigger adapter carries EEG markers.</figcaption></figure>
+</section>
+<section>
+  <h2>Put the updated files on the correct computer</h2>
+  <p>Changes made on a personal laptop take effect in the lab after the files are copied there.</p>
+  <table>
+    <thead><tr><th>Computer</th><th>Files and settings</th></tr></thead>
+    <tbody>
+      <tr><td>P: presentation</td><td>Copy <a href="run_biosemi_usb_bridge.m"><code>run_biosemi_usb_bridge.m</code></a>, <a href="Register-BiosemiTriggerAdapter.ps1"><code>Register-BiosemiTriggerAdapter.ps1</code></a> and <a href="Start-BiosemiUsb.ps1"><code>Start-BiosemiUsb.ps1</code></a> into the same FeatureAttention folder. Replace the old bridge. Open MATLAB and PowerShell in that folder using the same Windows login.</td></tr>
+      <tr><td>A: acquisition</td><td>Use the current <code>RT_files/RT_experiment_CCA.m</code> and <code>RT_files/RT_acquisition_CCA.m</code>, keeping A's EEG and FieldTrip settings correct. The acquisition code must accept <code>triggers.trial_start = [20 21]</code>. A writes <code>X:\FeatureAttention\nf.txt</code>.</td></tr>
+      <tr><td>Tablet</td><td>Use the current APK. In Leaf Game, select <code>UsbBiosemi</code> for <code>Nf Source Type</code>. In Paddle Game, select <code>UsbBiosemi</code> for <code>Connection Mode</code>. Set the USB Biosemi port to <code>5010</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>P reads A's same live file as <code>D:\Public\FeatureAttention\nf.txt</code>. Confirm these paths refer to the same shared file; two separate copies do not carry live feedback.</p>
+</section>
+<section>
+  <h2>Register the trigger adapter once on P</h2>
+  <div class="two">
+    <div>
+      <p>Enable USB debugging on the tablet, connect a data cable to P and approve P on the tablet. Install Android SDK Platform Tools if <code>adb.exe</code> is unavailable.</p>
+      <p>Before recording, stop the MATLAB bridge and close any older task that owns the trigger port. In PowerShell in the FeatureAttention folder, run:</p>
+      <pre><code>powershell -ExecutionPolicy Bypass -File .\Register-BiosemiTriggerAdapter.ps1 -Learn</code></pre>
+      <p>At the first prompt, unplug <b>only the P-to-A trigger USB adapter</b> and press Enter. At the second prompt, reconnect that same adapter and press Enter. Leave the tablet cable and Cedrus response box connected. The script waits up to 15 seconds at each step for Windows to update its device list.</p>
+      <p>It prints <code>Registered trigger adapter: ... on COM...</code> and saves the physical device's Windows identity under <code>%LOCALAPPDATA%\FeatureAttention\BiosemiTriggerAdapter.json</code>.</p>
+    </div>
+    <figure><img src="biosemi-usb-cable.png" alt="USB-C tablet connector and USB-A presentation-computer connector"><figcaption>This is the tablet cable. Registration concerns the separate adapter that sends triggers from P to A.</figcaption></figure>
+  </div>
+  <div class="callout">The older task code assigned COM8 to Cedrus and COM9 to trigger output. Those numbers can change. Register the physical trigger adapter once, then use automatic lookup on each session. Opening a COM port by itself does not prove a marker reached A.</div>
+  <p>Automatic lookup follows the registered Windows identity when its COM number changes. If replacing the adapter or moving a device without a USB serial number changes that identity, reconnect to the original USB socket or run <code>-Learn</code> again. The detector never substitutes another adapter just because it uses the same USB chip.</p>
+</section>
+<section>
+  <h2>Start each session</h2>
+  <ol class="steps">
+    <li><strong>Check the registered adapter on P.</strong>
+      <p>In PowerShell, run:</p>
+      <pre><code>powershell -ExecutionPolicy Bypass -File .\Register-BiosemiTriggerAdapter.ps1 -Resolve</code></pre>
+      <p>Expected output is one current port, such as <code>COM12</code>. You do not enter that number into the game or bridge. Resolve only reads Windows device information; it sends no test markers.</p>
+    </li>
+    <li><strong>Start recording and real-time CCA on A.</strong>
+      <p>Start Biosemi/ActiView and the existing FieldTrip buffer, then run <code>RT_experiment_CCA.m</code>. Confirm A prints the intended CCA feedback file path and that P can open that same <code>nf.txt</code>.</p>
+    </li>
+    <li><strong>Start the bridge in MATLAB on P.</strong>
+      <pre><code>run_biosemi_usb_bridge('D:\Public\FeatureAttention\nf.txt')</code></pre>
+      <p>Expected output includes <code>Trigger output: COM...</code> and <code>Biosemi USB bridge listening on P-system loopback port 5010</code>. This command resolves the adapter again automatically. Keep MATLAB running.</p>
+    </li>
+    <li><strong>Keep the tablet USB tunnel running.</strong>
+      <p>In a separate PowerShell window on P, run:</p>
+      <pre><code>powershell -ExecutionPolicy Bypass -File .\Start-BiosemiUsb.ps1</code></pre>
+      <p>The helper maintains <code>adb reverse tcp:5010 tcp:5010</code>. Keep its window open. If several tablets are connected, add <code>-DeviceSerial YOUR_TABLET_SERIAL</code>. Use <code>adb devices</code> to find the authorized tablet.</p>
+    </li>
+    <li><strong>Start the game and begin a block.</strong>
+      <p>Apply the tablet's <code>UsbBiosemi</code> settings and start the game. P should print <code>Tablet connected</code>. After the instructions appear, press Begin block. Receiving an initial NF record only proves the file/tunnel path is readable; verify fresh records during the trial using the checks below.</p>
+    </li>
+  </ol>
+</section>
+<section>
+  <h2>Confirm the complete connection before a full run</h2>
+  <p>Run a short test with both C1 and C2 trials and check all three computers. Local software tests cannot verify the P-to-A cable, ActiView configuration or shared drive in the lab.</p>
+  <table>
+    <thead><tr><th>Where</th><th>What confirms progress</th></tr></thead>
+    <tbody>
+      <tr><td>P: trial start</td><td><code>Trigger 20 -&gt; COM...</code> for C1 or <code>Trigger 21 -&gt; COM...</code> for C2. This reports a byte written to the serial interface; A must also record it.</td></tr>
+      <tr><td>A: marker received</td><td>ActiView/GDF/FieldTrip contains the corresponding stimulus event 20 or 21. RT CCA prints <code>1</code> when it accepts a trial start and <code>2</code> when it closes the trial.</td></tr>
+      <tr><td>P: live feedback</td><td><code>NF -&gt; tablet: [first second], file count N, tablet ACK M, newest S s ago</code> appears during the trial. Both <b>file count</b> and <b>tablet ACK</b> should advance. ACK confirms tablet receipt; it is not an acknowledgement from A for the trigger.</td></tr>
+      <tr><td>Trial end</td><td>P prints <code>Trigger 30 -&gt; COM...</code>, A closes the trial and resets its NF file. A new trial must again produce fresh counts.</td></tr>
+    </tbody>
+  </table>
+  <p><code>Trigger 0</code> is the connection reset; it does not start A's trial computation. A also writes <code>[0, 0, 0]</code> at trial boundaries. Zero NF values with a rising sample count can be valid output. A frozen sample count means feedback is not advancing. Unity stops a USB trial after five seconds without a fresh record.</p>
+</section>
+<section>
+  <h2>Recover a failed connection</h2>
+  <table>
+    <thead><tr><th>Observation</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>No trigger adapter registered</td><td>Run <code>-Learn</code> on P using the same Windows login as MATLAB. Registration on the personal laptop does not register P.</td></tr>
+      <tr><td>Registered adapter absent or identity changed</td><td>Check the adapter cable and driver in Device Manager. Try its original USB socket. If its identity changed, stop recording and repeat <code>-Learn</code>. The detector will not switch to a response box.</td></tr>
+      <tr><td>No device disappears or reappears during Learn</td><td>Confirm you are handling the trigger USB adapter. Wait for its COM entry in Device Manager, then retry. If several devices disappear, disconnect only the trigger adapter.</td></tr>
+      <tr><td>Undefined function instrhwinfo</td><td>An older bridge copy still contains the unnecessary hardware-listing check. Replace <code>run_biosemi_usb_bridge.m</code> with the updated file, run <code>clear run_biosemi_usb_bridge</code>, and check <code>which run_biosemi_usb_bridge -all</code> points to the updated copy. Port discovery is performed by the Windows registration script. Existing successful adapter registration remains valid.</td></tr>
+      <tr><td>Too many output arguments when sending a trigger, or tablet says MATLAB bridge closed the connection</td><td>Check P's MATLAB console for the first error. An older bridge incorrectly requests an output from serial <code>fwrite</code>. Replace <code>run_biosemi_usb_bridge.m</code> with the current MATLAB R2015b-compatible file, stop the old bridge, run <code>clear run_biosemi_usb_bridge</code>, check <code>which run_biosemi_usb_bridge -all</code>, then restart it. The corrected bridge writes without an output argument and checks <code>ValuesSent</code>. Keep the successful adapter registration; no new Learn step is needed for this code fix.</td></tr>
+      <tr><td>COM port exists but MATLAB cannot open it</td><td>Close the older Psychtoolbox task or other process using it, then restart the bridge. Use Device Manager or <code>Register-BiosemiTriggerAdapter.ps1 -Resolve</code> to check the current adapter port. Do not change to another port just because that port opens.</td></tr>
+      <tr><td>P cannot read nf.txt</td><td>Check the shared drive and A's output path. Restore access to the same live file before starting the bridge.</td></tr>
+      <tr><td>ADB waits for authorization</td><td>Check the data cable, USB debugging and tablet authorization prompt. <code>adb devices</code> must show the tablet as <code>device</code>.</td></tr>
+      <tr><td>Only Trigger 0 appears</td><td>Confirm the tablet uses <code>UsbBiosemi</code>, shows the instructions, and has begun a block. Capture the subsequent trigger lines.</td></tr>
+      <tr><td>20/21 prints on P but A does not start</td><td>Check the P-to-A trigger cable and A's stimulus events. If A sees 21 but ignores it, check <code>which RT_acquisition_CCA -all</code> on A and confirm the running file accepts <code>[20 21]</code>.</td></tr>
+      <tr><td>File count stays zero or frozen</td><td>Check whether A starts the trial and produces EEG/CCA updates, then confirm A and P use the same shared nf.txt.</td></tr>
+      <tr><td>File count advances but ACK does not</td><td>Check the current APK, tablet cable and ADB helper. Restart the game connection after restoring the tunnel.</td></tr>
+      <tr><td>Tablet unplugged during a block</td><td>End that block, reconnect USB, wait for the ADB helper to restore the tunnel, then start a new block.</td></tr>
+      <tr><td>Bridge reports failed trigger output</td><td>The bridge closes the failed serial session. Stop the block, check A, reconnect the trigger adapter and run the MATLAB bridge again. It will detect the current COM number. A successful byte write still requires a matching event on A.</td></tr>
+      <tr><td>Trigger adapter unplugged during a block</td><td>Stop the block and P bridge, check A's trial/recording state, reconnect the adapter and restart the bridge. It will resolve the current COM number on restart.</td></tr>
+    </tbody>
+  </table>
+  <p>After the session, stop P's MATLAB bridge with Ctrl+C and close the ADB helper. Register once per P Windows account; repeat registration when the adapter's Windows identity changes.</p>
+</section>
+<section>
+  <h2>Marker and feedback format</h2>
+  <div class="flow"><div class="node">Tablet<br><small>Unity</small></div><div class="arrow">&harr;</div><div class="node">P<br><small>ADB + MATLAB</small></div><div class="arrow">&harr;</div><div class="node">A<br><small>Biosemi + RT CCA</small></div></div>
+  <p><b>Markers:</b> tablet &rarr; USB tunnel &rarr; P MATLAB &rarr; one raw trigger byte &rarr; A EEG trigger input.</p>
+  <p><b>Feedback:</b> A's shared <code>nf.txt</code> &rarr; P MATLAB &rarr; USB tunnel &rarr; tablet.</p>
+  <table>
+    <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+    <tbody><tr><td>0</td><td>Connection reset</td></tr><tr><td>20 / 21</td><td>C1 / C2 trial start</td></tr><tr><td>45</td><td>Cue onset, where emitted by the game mode</td></tr><tr><td>50</td><td>Color reveal / success</td></tr><tr><td>40</td><td>Participant response</td></tr><tr><td>30</td><td>Trial stop</td></tr></tbody>
+  </table>
+  <p>NF records contain three little-endian doubles: <code>[NF_17gt19, NF_19gt17, sampleCount]</code>, totaling 24 bytes. Leaf Game uses the first channel for C1 and the second for C2. P forwards changed records during trials; idle heartbeats do not create fresh trial feedback.</p>
+  <p>Marker timing includes Unity presentation, ADB, MATLAB and the EEG acquisition path. Measure onset offset and jitter against a photodiode if precise visual timing is required.</p>
+</section>
+<section>
+  <h2>Checks and references</h2>
+  <p>The adapter lookup is tested for COM renumbering, missing or disabled devices, duplicate identities, Bluetooth exclusion, same-chip response boxes, delayed Windows enumeration and failed registration. To run the supplied regression checks on P:</p>
+  <pre><code>powershell -ExecutionPolicy Bypass -File .\Register-BiosemiTriggerAdapter.ps1 -SelfTest
+powershell -ExecutionPolicy Bypass -File .\tests\Test-BiosemiTriggerAdapter.ps1</code></pre>
+  <p>On a development computer with Python and MATLAB R2019a or later, the full bridge simulation can also be run with <code>python .\tests\test_biosemi_usb_bridge.py</code>. It uses the legacy serial API with no <code>fwrite</code> output argument and a <code>ValuesSent</code> counter, deliberately makes <code>instrhwinfo</code> unavailable, and checks real TCP NF delivery, marker bytes, incomplete writes, adapter errors, and a tablet disconnect/reconnect while NF is frozen.</p>
+  <p>The tests use simulated device inventories and temporary configuration files. They do not open serial ports or send trigger markers. Copy the <code>tests</code> folder too if you want to run the second command on P. The Python development runner uses <code>-batch</code>, which is unavailable in MATLAB R2015b; do not run that Python command on the lab MATLAB. The bridge itself uses the R2015b legacy serial interface. Local development checks use Windows PowerShell 5.1 and MATLAB R2026a. The lab uses MATLAB R2015b; the complete P-to-A hardware route must still be verified there using the short C1/C2 test above.</p>
+  <p>Device identity and driver status: <a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/install/instance-ids">Microsoft device instance IDs</a>, <a href="https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pnpentity">Windows PnP devices</a>. USB reversal: <a href="https://developer.android.com/develop/ui/views/layout/webapps/access-local-server">Android Developers</a>. Serial byte writes: <a href="https://www.mathworks.com/help/matlab/ref/serial.fwrite.html">MathWorks</a>.</p>
+</section>
+</main>
+</body>
+</html>
