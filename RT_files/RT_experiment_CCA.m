@@ -16,6 +16,9 @@ method = 'DSS';
 channels = 41;        
 Fs = 128;
 SSVEP_freq = [17 19];
+% A-system mapping of P's D:\Public\FeatureAttention\nf.txt.
+% Keep both machines pointed at this one shared file.
+feedback_file_name = 'X:\FeatureAttention\nf.txt';
 % Noise_freq = [22 24 28 30];
 cut_off_init = [0,0]; %cc
 delta = [2,2];  %cc % vestigial - alpha/AMI feedback is disabled in RT_acquisition_8.m, so this gain is no longer used; still passed through harmlessly
@@ -28,7 +31,8 @@ while(1)
 
 run_no = run_no + 1;
 opts = {'subject_no',subject_no,'run_no',run_no,'method',method,'channels',channels,'Fs',Fs,...
-    'SSVEP_freq',SSVEP_freq,'cut_off_init',cut_off_init,'delta',delta,'deltas',deltas};
+    'SSVEP_freq',SSVEP_freq,'cut_off_init',cut_off_init,'delta',delta,'deltas',deltas, ...
+    'feedback_file_name',feedback_file_name};
 
 [cut_off_init] = RT_acquisition_CCA(opts);
 
