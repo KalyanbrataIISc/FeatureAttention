@@ -9,7 +9,7 @@ global run;
 run = true;
 channels = 41; % set to the same value as in Actiview "Channels sent by TCP" Fs = 128;
 Fs = 128;
-SSVEP_freq = [19 23];
+SSVEP_freq = [17 19];
 trial_on = false;
 
 subject_no = 9988;
@@ -21,10 +21,11 @@ deltas = [ 1, 1 ];
 
 cut_off_init = [ 0, 0 ];
 cut_off = cut_off_init;
+feedback_file_name = '';
 
 triggers.trial_spatialCue = 11;
 triggers.trial_rightCue = 12;
-triggers.trial_start = 20;
+triggers.trial_start = [20 21]; % C1 and C2 Unity trial starts
 triggers.trial_stop = 30;
 triggers.block_stop = 25;
 
@@ -49,6 +50,10 @@ script_dir = fileparts(mfilename('fullpath'));
 task_dir = fileparts(script_dir);
 if ~exist('feedback_file_name', 'var') || isempty(feedback_file_name)
     feedback_file_name = fullfile(task_dir, 'nf.txt');
+end
+fprintf('CCA neurofeedback file: %s\n', feedback_file_name);
+if ~exist(fileparts(feedback_file_name), 'dir')
+    error('CCA feedback directory is unavailable: %s', fileparts(feedback_file_name));
 end
 
 if ~exist('log_file_name', 'var') || isempty(log_file_name)
@@ -163,9 +168,10 @@ while(1)
         end
     end
 
-    if ~isempty(find(trig_values==triggers.trial_start, 1)) && ~trial_on
+    trial_start_idx = find(ismember(trig_values, triggers.trial_start), 1, 'first');
+    if ~isempty(trial_start_idx) && ~trial_on
         trial_no = trial_no+1;
-        prev_samp = event_sample(trig_values==triggers.trial_start).sample;
+        prev_samp = event_sample(trial_start_idx).sample;
         disp('1');
         trial_on = true;
         try
@@ -183,12 +189,7 @@ while(1)
             ring_buffer = data(1:size(data,1),end-ring_buffer_size+1:end);
         end
 
-        try
-        fid1=fopen(feedback_file_name,'w');
-        fwrite(fid1,[0,0,0],'double');
-        fclose(fid1);
-        catch
-        end
+        writeFeedbackFile(feedback_file_name, [0,0,0]);
 
         try
         is_new = ~exist(log_file_name, 'file');
@@ -235,12 +236,7 @@ while(1)
         
         prev_SSVEP_power = [];
 
-        try
-        fid1=fopen(feedback_file_name,'w');
-        fwrite(fid1,[0,0,0],'double');
-        fclose(fid1);
-        catch
-        end
+        writeFeedbackFile(feedback_file_name, [0,0,0]);
 
         try
         if fid_log ~= -1
@@ -321,12 +317,7 @@ while(1)
         cut_off_all(:,:,cnt) = [score_17, score_19];
         cnt=cnt+1;
 
-        try
-        fid1=fopen(feedback_file_name,'w');
-        fwrite(fid1,fb_out_sendw,'double');
-        fclose(fid1);
-        catch
-        end
+        writeFeedbackFile(feedback_file_name, fb_out_sendw);
 
         try
             if fid_log ~= -1
@@ -344,6 +335,39 @@ end
 end
 
 % --- HW-CCA Local Functions ---
+function writeFeedbackFile(path, values)
+    persistent failureReported;
+    if isempty(failureReported)
+        failureReported = false;
+    end
+    message = '';
+    for attempt = 1:3
+        [fid, message] = fopen(path, 'wb', 'ieee-le');
+        if fid ~= -1
+            try
+                count = fwrite(fid, values, 'double');
+                fclose(fid);
+                if count == 3
+                    if failureReported
+                        fprintf('CCA feedback file writes resumed: %s\n', path);
+                    end
+                    failureReported = false;
+                    return;
+                end
+                message = sprintf('Wrote %d of 3 doubles.', count);
+            catch ME
+                message = ME.message;
+                fclose(fid);
+            end
+        end
+        pause(0.003);
+    end
+    if ~failureReported
+        warning('CCA could not write NF to %s: %s', path, message);
+        failureReported = true;
+    end
+end
+
 function [Y, Cyy_inv] = precompute_reference_terms(freq, n_samples, fs, n_harmonics)
     t = (0:n_samples-1)' / fs;
     Y = zeros(n_samples, 2 * n_harmonics);
